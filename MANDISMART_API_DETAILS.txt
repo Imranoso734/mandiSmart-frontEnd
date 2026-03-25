@@ -1,0 +1,704 @@
+MANDISMART API DETAILS
+=======================
+
+System Name
+-----------
+MandiSmart
+
+Purpose
+-------
+Ye backend mandi business ko digital banane ke liye design kiya gaya hai. Is mein supplier se aane wala maal, customer sale, customer payment, khata, expenses, aur reports manage hoti hain.
+
+Base URL
+--------
+/api/v1
+
+Authentication
+--------------
+Protected endpoints par ye header lazmi hai:
+Authorization: Bearer <token>
+
+Roles
+-----
+OWNER:
+- tenant profile manage kar sakta hai
+- operator users create/update/delete kar sakta hai
+- sari reports dekh sakta hai
+
+OPERATOR:
+- customer, supplier, consignment, sale, payment, expense entries kar sakta hai
+- field work aur mandi floor operations handle kar sakta hai
+
+====================================================================
+1. HEALTH CHECK API
+====================================================================
+
+GET /api/v1/health-check
+Method:
+- GET
+
+Purpose:
+- server running hai ya nahi check karne ke liye
+
+Auth:
+- nahi chahiye
+
+====================================================================
+2. AUTH APIs
+====================================================================
+
+POST /api/v1/auth/register-owner
+Method:
+- POST
+
+Purpose:
+- naya tenant create karta hai
+- us tenant ka owner user create karta hai
+- initial account setup ke liye use hota hai
+
+Body Fields:
+- tenantName: tenant ya Arrti business ka naam
+- tenantSlug: unique slug, login ke waqt use hota hai
+- tenantPhone: optional
+- tenantAddress: optional
+- ownerName: owner ka naam
+- ownerEmail: owner login email
+- ownerPhone: optional
+- password: owner password
+
+POST /api/v1/auth/login
+Method:
+- POST
+
+Purpose:
+- tenant slug + email + password ke through login karta hai
+- token return karta hai
+
+Body Fields:
+- tenantSlug
+- email
+- password
+
+GET /api/v1/auth/me
+Method:
+- GET
+
+Purpose:
+- logged-in user ki profile return karta hai
+- current tenant context confirm karta hai
+
+Auth:
+- required
+
+====================================================================
+3. TENANT APIs
+====================================================================
+
+GET /api/v1/tenant/me
+Method:
+- GET
+
+Purpose:
+- current tenant ki detail laata hai
+
+Auth:
+- required
+
+PATCH /api/v1/tenant/me
+Method:
+- PATCH
+
+Purpose:
+- tenant profile update karta hai
+
+Auth:
+- OWNER only
+
+Body Fields:
+- name
+- phone
+- address
+- locale
+- currency
+- isActive
+
+====================================================================
+4. USER APIs
+====================================================================
+
+GET /api/v1/users
+Method:
+- GET
+
+Purpose:
+- tenant ke users list karta hai
+
+Auth:
+- OWNER only
+
+Query Fields:
+- page
+- limit
+- search
+- role
+
+GET /api/v1/users/:id
+Method:
+- GET
+
+Purpose:
+- ek specific user ki detail
+
+Auth:
+- OWNER only
+
+POST /api/v1/users
+Method:
+- POST
+
+Purpose:
+- naya operator ya owner user create karta hai
+
+Auth:
+- OWNER only
+
+Body Fields:
+- name
+- email
+- phone
+- role: OWNER ya OPERATOR
+- password
+
+PUT /api/v1/users/:id
+Method:
+- PUT
+
+Purpose:
+- user update karta hai
+
+Auth:
+- OWNER only
+
+Body Fields:
+- name
+- phone
+- role
+- password
+- isActive
+
+DELETE /api/v1/users/:id
+Method:
+- DELETE
+
+Purpose:
+- user remove karta hai
+
+Auth:
+- OWNER only
+
+====================================================================
+5. CUSTOMER APIs
+====================================================================
+
+GET /api/v1/customers
+Method:
+- GET
+
+Purpose:
+- customer list with filters and pagination
+
+Auth:
+- required
+
+Query Fields:
+- page
+- limit
+- search
+- isActive
+
+GET /api/v1/customers/:id
+Method:
+- GET
+
+Purpose:
+- customer detail aur linked business data dekhna
+
+Auth:
+- required
+
+POST /api/v1/customers
+Method:
+- POST
+
+Purpose:
+- naya customer banana
+
+Auth:
+- required
+
+Body Fields:
+- name
+- phone
+- address
+- notes
+- isActive
+
+PUT /api/v1/customers/:id
+Method:
+- PUT
+
+Purpose:
+- customer update karna
+
+DELETE /api/v1/customers/:id
+Method:
+- DELETE
+
+Purpose:
+- customer remove karna
+
+Business Use:
+- jese Sajid jaisa customer system mein store hoga
+- uski sales aur payments ledger ke andar chalti rahengi
+
+====================================================================
+6. SUPPLIER APIs
+====================================================================
+
+GET /api/v1/suppliers
+Method:
+- GET
+
+Purpose:
+- supplier list with pagination/filter
+
+GET /api/v1/suppliers/:id
+Method:
+- GET
+
+Purpose:
+- supplier detail dekhna
+
+POST /api/v1/suppliers
+Method:
+- POST
+
+Purpose:
+- naya kisan / supplier create karna
+
+PUT /api/v1/suppliers/:id
+Method:
+- PUT
+
+Purpose:
+- supplier update karna
+
+DELETE /api/v1/suppliers/:id
+Method:
+- DELETE
+
+Purpose:
+- supplier remove karna
+
+Body Fields:
+- name
+- phone
+- address
+- notes
+- isActive
+
+====================================================================
+7. CONSIGNMENT APIs
+====================================================================
+
+GET /api/v1/consignments
+Method:
+- GET
+
+Purpose:
+- consignments list karna
+
+Query Fields:
+- page
+- limit
+- search
+- supplierId
+- status
+
+GET /api/v1/consignments/:id
+Method:
+- GET
+
+Purpose:
+- ek consignment ki full detail laana
+
+POST /api/v1/consignments
+Method:
+- POST
+
+Purpose:
+- supplier se aaya hua truck record karna
+- is mein multiple items ho sakte hain
+
+Body Fields:
+- supplierId
+- vehicleNumber
+- driverName
+- driverPhone
+- arrivalDate
+- notes
+- commissionType: PERCENTAGE ya FIXED
+- commissionValue
+- items[]
+
+Consignment Item Fields:
+- productNameUrdu
+- productNameRoman
+- unit
+- quantityReceived
+- baseRate
+
+PUT /api/v1/consignments/:id
+Method:
+- PUT
+
+Purpose:
+- consignment detail update karna
+
+DELETE /api/v1/consignments/:id
+Method:
+- DELETE
+
+Purpose:
+- consignment remove karna
+
+POST /api/v1/consignments/:id/close
+Method:
+- POST
+
+Purpose:
+- manually consignment close karna
+- jab truck ka maal bech diya jaye to close use hota hai
+
+Body Fields:
+- notes
+
+Business Meaning:
+- OPEN = maal abhi under sale hai
+- CLOSED = maal ka operational cycle khatam ho gaya
+
+====================================================================
+8. SALE APIs
+====================================================================
+
+GET /api/v1/sales
+Method:
+- GET
+
+Purpose:
+- sales list dekhna
+
+Query Fields:
+- page
+- limit
+- search
+- customerId
+
+GET /api/v1/sales/:id
+Method:
+- GET
+
+Purpose:
+- ek sale invoice ki detail dekhna
+
+POST /api/v1/sales
+Method:
+- POST
+
+Purpose:
+- customer ko maal bechne ki entry karna
+- ye ledger mein debit effect daalti hai
+
+Body Fields:
+- customerId
+- saleDate
+- notes
+- items[]
+
+Sale Item Fields:
+- consignmentId
+- consignmentItemId
+- productNameUrdu
+- quantity
+- rate
+
+PUT /api/v1/sales/:id
+Method:
+- PUT
+
+Purpose:
+- sale update karna
+
+DELETE /api/v1/sales/:id
+Method:
+- DELETE
+
+Purpose:
+- sale delete karna
+
+Business Rule:
+- sale = customer debit
+- multiple sale items allowed
+- har sale item kisi consignment item ke against hoti hai
+
+====================================================================
+9. PAYMENT APIs
+====================================================================
+
+GET /api/v1/payments
+Method:
+- GET
+
+Purpose:
+- payments ki list dekhna
+
+Query Fields:
+- page
+- limit
+- search
+- customerId
+- method
+
+GET /api/v1/payments/:id
+Method:
+- GET
+
+Purpose:
+- payment detail dekhna
+
+POST /api/v1/payments
+Method:
+- POST
+
+Purpose:
+- customer payment record karna
+- ledger mein credit effect create hota hai
+
+Body Fields:
+- customerId
+- amount
+- paymentDate
+- method: CASH / BANK / MOBILE_WALLET / ADJUSTMENT
+- reference
+- notes
+
+PUT /api/v1/payments/:id
+Method:
+- PUT
+
+Purpose:
+- payment update karna
+
+DELETE /api/v1/payments/:id
+Method:
+- DELETE
+
+Purpose:
+- payment remove karna
+
+Business Rule:
+- payment = customer credit
+- agar payment zyada ho to negative balance possible hai
+
+====================================================================
+10. EXPENSE APIs
+====================================================================
+
+GET /api/v1/expenses
+Method:
+- GET
+
+Purpose:
+- expenses list dekhna
+
+Query Fields:
+- page
+- limit
+- search
+- consignmentId
+- expenseType
+
+GET /api/v1/expenses/:id
+Method:
+- GET
+
+Purpose:
+- single expense detail dekhna
+
+POST /api/v1/expenses
+Method:
+- POST
+
+Purpose:
+- mandi expense record karna
+
+Body Fields:
+- consignmentId (optional)
+- expenseType: LABOUR / VEHICLE_RENT / COMMISSION / OTHER
+- titleUrdu
+- amount
+- expenseDate
+- notes
+
+PUT /api/v1/expenses/:id
+Method:
+- PUT
+
+Purpose:
+- expense update karna
+
+DELETE /api/v1/expenses/:id
+Method:
+- DELETE
+
+Purpose:
+- expense remove karna
+
+Business Rule:
+- labour aur vehicle rent supplier settlement ko affect kar sakte hain
+- commission bhi explicit expense type ke طور پر track hoti hai
+
+====================================================================
+11. REPORT APIs
+====================================================================
+
+GET /api/v1/reports/daily-sales
+Method:
+- GET
+
+Purpose:
+- ek din ki sales summary laana
+
+Query Fields:
+- date (format: YYYY-MM-DD)
+
+GET /api/v1/reports/customer-ledger/:id
+Method:
+- GET
+
+Purpose:
+- customer ka running khata aur history dikhana
+
+Params:
+- id = customer id
+
+Optional Query Fields:
+- from (YYYY-MM-DD)
+- to (YYYY-MM-DD)
+
+GET /api/v1/reports/consignment-summary/:id
+Method:
+- GET
+
+Purpose:
+- ek consignment ki overall summary, maal movement, expenses, aur operational totals dekhna
+
+Params:
+- id = consignment id
+
+GET /api/v1/reports/supplier-settlement/:id
+Method:
+- GET
+
+Purpose:
+- supplier ko dene wala settlement summary nikalna
+
+Params:
+- id = consignment id
+
+Business Meaning:
+- gross sale total
+- expenses deduction
+- commission deduction
+- payable / settlement position
+
+====================================================================
+12. COMMON QUERY PATTERN
+====================================================================
+
+List endpoints aksar ye query params support karte hain:
+- page
+- limit
+- search
+
+Ye pagination aur basic filtering ke liye use hote hain.
+
+====================================================================
+13. IMPORTANT BUSINESS METHODS
+====================================================================
+
+1. Register Owner
+- tenant aur owner account create karta hai
+
+2. Login
+- token issue karta hai
+
+3. Create Consignment
+- supplier truck aur items record karta hai
+
+4. Create Sale
+- maal customer ko issue karta hai
+- ledger mein debit add hota hai
+
+5. Create Payment
+- customer receipt entry hoti hai
+- ledger mein credit add hota hai
+
+6. Create Expense
+- mandi cost capture hoti hai
+
+7. Close Consignment
+- consignment operationally close hota hai
+
+8. Customer Ledger Report
+- customer ka khata date wise show hota hai
+
+9. Supplier Settlement Report
+- supplier payable calculate karne mein help karta hai
+
+====================================================================
+14. POSTMAN FILES
+====================================================================
+
+Import these files in Postman:
+- postman/MandiSmart.postman_collection.json
+- postman/MandiSmart.local.postman_environment.json
+
+====================================================================
+15. LOCAL RUN COMMANDS
+====================================================================
+
+npm install
+npx prisma generate
+npx prisma migrate dev --name init
+npm run db:seed
+npm run build
+npm run start:dev
+
+====================================================================
+16. DATABASE
+====================================================================
+
+Database:
+- PostgreSQL
+- Prisma ORM
+- Docker supported
+
+Local Docker host port:
+- 5433
+
+====================================================================
+17. IMPORTANT NOTE
+====================================================================
+
+Ye documentation current active backend routes ke mutabiq likhi gayi hai. Agar future mein new endpoints add hon, to README aur is file ko bhi update karna chahiye.

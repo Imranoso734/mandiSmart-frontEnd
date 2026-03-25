@@ -1,0 +1,598 @@
+MANDISMART BUSINESS LOGIC EXPLAINED
+==================================
+
+System Name
+-----------
+MandiSmart
+
+Purpose
+-------
+Ye document MandiSmart system ki business logic ko full detail ke saath explain karta hai. Is ka maqsad ye batana hai ke mandi ka kaam system ke andar kaise model kiya gaya hai, kis stage par kya record hota hai, aur sales, payments, expenses, consignments, ledger, aur supplier settlement ek doosre ke saath kaise linked hain.
+
+====================================================================
+1. BUSINESS OVERVIEW
+====================================================================
+
+MandiSmart ek mandi management aur ledger system hai jo local fruit aur vegetable market ke workflow ko digital banata hai.
+
+Real world mein flow kuch is tarah hota hai:
+- kisan ya supplier truck mein maal bhejta hai
+- Arrti us maal ko mandi mein receive karta hai
+- phir wo maal customers ko becha jata hai
+- customer cash ya udhar par maal uthata hai
+- customer baad mein payment karta hai
+- Arrti apna commission aur mandi ke kharchay deduct karta hai
+- baqi paisa supplier ya kisan ke settlement ke liye nikalta hai
+
+MandiSmart isi real business process ko database aur APIs ke through manage karta hai.
+
+====================================================================
+2. MAIN ACTORS IN THE SYSTEM
+====================================================================
+
+1. Tenant
+- har Arrti business ek tenant hai
+- har tenant ka apna data alag hota hai
+- same database use hota hai lekin records `tenantId` ke zariye isolate hote hain
+
+2. Owner (Arrti)
+- business owner hota hai
+- tenant ka main controller hota hai
+- users create karta hai
+- reports aur settlement dekh sakta hai
+- sari mandi activity par nazar rakhta hai
+
+3. Operator (Mushi)
+- day-to-day data entry karta hai
+- sales, payments, consignments aur expenses enter karta hai
+- field ya mandi floor ka operational user hai
+
+4. Supplier / Kisan
+- jo maal bhejta hai
+- us ka maal consignment ke form mein record hota hai
+- us ke liye baad mein settlement nikala jata hai
+
+5. Customer
+- jo mandi se maal uthata hai
+- cash ya udhar par maal le sakta hai
+- us ka khata system maintain karta hai
+
+====================================================================
+3. MULTI-TENANT BUSINESS LOGIC
+====================================================================
+
+MandiSmart SaaS model par bana hai. Is ka matlab hai:
+- ek hi software multiple Arrti businesses use kar sakte hain
+- har Arrti ka alag account hoga
+- har Arrti ka customer alag hoga
+- har Arrti ka supplier alag hoga
+- ek tenant ka data doosre tenant ko kabhi nazar nahi aayega
+
+Technical business rule:
+- har business record ke saath `tenantId` hota hai
+- API queries hamesha authenticated tenant context ke saath chalti hain
+
+Business fayda:
+- centralized product
+- isolated customer data
+- multiple mandi businesses ko same platform par onboard kiya ja sakta hai
+
+====================================================================
+4. CORE BUSINESS ENTITIES
+====================================================================
+
+1. Tenant
+- business identity
+- name, slug, phone, address, locale, currency
+
+2. User
+- owner ya operator
+- tenant ke under kaam karta hai
+
+3. Customer
+- maal lene wala aadmi ya party
+- is ka khata maintain hota hai
+
+4. Supplier
+- kisan ya supplier jo truck ke through maal bhejta hai
+
+5. Consignment
+- supplier se aaya hua truck / load / maal batch
+- ye operational center hai jahan se sales aur settlement linked hote hain
+
+6. Consignment Item
+- consignment ke andar alag-alag items
+- misal: Aloo, Pyaaz, Bhindi
+
+7. Sale
+- customer ko maal bechne ki entry
+- khata par debit effect
+
+8. Sale Item
+- sale ke andar har item ki detail
+- kis consignment se gaya aur kis rate par gaya
+
+9. Payment
+- customer ki payment receipt
+- khata par credit effect
+
+10. Expense
+- mandi ke kharchay
+- labour, vehicle rent, commission, ya other
+
+11. Supplier Settlement
+- supplier ko dene wala final ya partial payable result
+
+====================================================================
+5. COMPLETE OPERATIONAL FLOW
+====================================================================
+
+Step 1: Supplier maal bhejta hai
+- Supplier ka truck mandi mein aata hai
+- operator ya owner system mein naya consignment banata hai
+- vehicle number, driver detail, arrival date aur items enter hotay hain
+- commission type aur commission value bhi isi stage par define hoti hai
+
+Step 2: Consignment open state mein hota hai
+- naya consignment default tor par OPEN hota hai
+- iska matlab hai ke is truck ka maal abhi mandi mein sell hona baqi hai
+
+Step 3: Customer ko sale hoti hai
+- jab koi customer maal uthata hai to sale entry banti hai
+- ek sale mein multiple items ho sakte hain
+- har item kisi consignment item ke against linked hota hai
+- system total sale amount calculate karta hai
+
+Step 4: Customer ledger update hota hai
+- sale customer ke khata mein debit add karti hai
+- jitni sale hui utna customer ka payable barhta hai
+
+Step 5: Customer payment karta hai
+- jab customer paisa deta hai to payment entry record hoti hai
+- payment credit effect create karti hai
+- system running balance ko update karta hai
+
+Step 6: Expenses record hote hain
+- labour, truck kiraya, commission, ya other mandi kharchay record kiye jate hain
+- kuch expenses specific consignment se linked ho sakte hain
+
+Step 7: Consignment close hota hai
+- jab truck ka maal effectively dispose/sell ho jaye to consignment close kiya jata hai
+- close karne ka matlab operational cycle complete ho gayi
+
+Step 8: Supplier settlement nikalta hai
+- gross sale amount nikala jata hai
+- commission aur linked expenses deduct hote hain
+- final payable supplier ke liye calculate hota hai
+
+====================================================================
+6. CONSIGNMENT BUSINESS LOGIC
+====================================================================
+
+Consignment ka matlab:
+- ek supplier ka ek vehicle load
+- is mein multiple products ho sakte hain
+- system ke andar ye sale aur settlement ka parent container hai
+
+Consignment fields ka business meaning:
+- supplierId: kis kisan ya supplier ka maal hai
+- vehicleNumber: truck ya gari ki pehchan
+- driverName / driverPhone: operational record
+- arrivalDate: truck mandi mein kab aaya
+- commissionType: percentage based ya fixed commission
+- commissionValue: commission ki value
+- items[]: is truck ke products
+
+Consignment Item ka role:
+- har consignment ke andar item-wise stock-like reference hota hai
+- sale item isi consignment item ke against jaati hai
+- is se system ko pata chalta hai ke kaunsa maal kis customer ko gaya
+
+Status logic:
+- OPEN: truck ka maal abhi business cycle mein chal raha hai
+- CLOSED: truck ka maal operationally complete ho gaya
+
+Manual close rule:
+- system auto close nahi karta
+- owner ya operator manually close karta hai
+- ye mandi ke real workflow ke mutabiq rakha gaya hai kyun ke practical ground reality mein manual control zaroori hota hai
+
+====================================================================
+7. SALES BUSINESS LOGIC
+====================================================================
+
+Sale ka matlab:
+- customer ko maal issue karna
+- customer se paisa abhi mil bhi sakta hai ya baad mein mil sakta hai
+
+Sale structure:
+- ek sale ek customer se linked hoti hai
+- ek sale ke andar multiple items ho sakte hain
+- har item ka quantity aur rate manually enter hota hai
+- total amount line items se banta hai
+
+Important rule:
+- sale = debit
+
+Matlab:
+- customer ne maal liya
+- ab customer par utni amount payable hai
+- us ke ledger mein qarz barh gaya
+
+Example:
+- Sajid ne 5000 ka maal liya
+- system customer ledger mein 5000 debit add karega
+
+Phir:
+- next day Sajid ne 15000 ka aur maal liya
+- total debit 20000 ho gaya
+
+Agar us ne 3000 payment di:
+- 20000 - 3000 = 17000 balance
+
+Business insight:
+- sale create karna sirf invoice banana nahi, balkeh khata barhana bhi hai
+
+====================================================================
+8. PAYMENT BUSINESS LOGIC
+====================================================================
+
+Payment ka matlab:
+- customer ne paisa jama karwaya
+- wo current ya previous udhar adjust karne ke liye hota hai
+
+Payment methods:
+- CASH
+- BANK
+- MOBILE_WALLET
+- ADJUSTMENT
+
+Important rule:
+- payment = credit
+
+Matlab:
+- customer ka payable kam hota hai
+- ledger balance reduce hota hai
+
+Example:
+- total customer balance 17000 hai
+- customer 20000 jama karwa deta hai
+- 17000 adjust hoga
+- remaining 3000 advance/negative balance ban sakta hai, depending on full transaction sequence
+
+MandiSmart negative balance allow karta hai.
+
+Is ka business matlab:
+- customer pehle advance paisa de sakta hai
+- future sale us advance ke against adjust ho sakti hai
+
+Ye local mandi workflow ke liye bohat important hai.
+
+====================================================================
+9. CUSTOMER LEDGER / KHATA LOGIC
+====================================================================
+
+Ledger is system ka sab se important business concept hai.
+
+Basic formula:
+- Balance = Total Sales - Total Payments
+
+Ya operational terms mein:
+- debit barhta hai jab sale hoti hai
+- credit barhta hai jab payment hoti hai
+- running balance in dono se nikalta hai
+
+Ledger rules:
+- har customer ka apna ledger hota hai
+- sale aur payment dono same customer account par impact daalte hain
+- date-wise history available hoti hai
+- negative balance allowed hai
+
+Real world example:
+
+Day 1:
+- Sajid ne 5000 ka maal liya
+- balance = 5000
+
+Day 2:
+- Sajid ne 15000 ka maal liya
+- total balance = 20000
+
+Same day:
+- Sajid ne 3000 payment di
+- balance = 17000
+
+Day 3:
+- Sajid ne 5000 ka aur maal liya
+- balance = 22000
+
+Same day:
+- Sajid ne 20000 payment di
+- balance = 2000
+
+Final close:
+- Sajid ne 2000 aur de diye
+- balance = 0
+
+Agar kisi stage par payment sale se zyada ho jaye:
+- balance negative ho sakta hai
+- iska matlab customer ke paas advance padha hai
+
+====================================================================
+10. EXPENSE BUSINESS LOGIC
+====================================================================
+
+Expense ka role:
+- mandi operation ke kharchay record karna
+- profitability aur supplier payable ko accurate banana
+
+Supported expense categories:
+- LABOUR
+- VEHICLE_RENT
+- COMMISSION
+- OTHER
+
+Business meaning:
+- LABOUR = mazdoori, utarai, charhai
+- VEHICLE_RENT = truck kiraya ya transport cost
+- COMMISSION = Arrti ki commission ya specific commission expense
+- OTHER = koi aur mandi expense
+
+Expense linkage:
+- expense optionally consignment se attach ho sakta hai
+- agar consignment se linked ho to settlement impact clear ho jata hai
+
+Business importance:
+- supplier ko payable nikalne ke liye gross sale se pehle ya baad expenses ka role samajhna zaroori hai
+- expense tracking ke baghair true settlement ya business margin clear nahi hota
+
+====================================================================
+11. COMMISSION BUSINESS LOGIC
+====================================================================
+
+Commission do modes mein record hoti hai:
+- PERCENTAGE
+- FIXED
+
+PERCENTAGE ka matlab:
+- total sale value ka ek percent commission hoga
+
+FIXED ka matlab:
+- ek fixed rupee amount commission hoga
+
+Use case:
+- kuch suppliers ke saath Arrti percentage par kaam karta hai
+- kuch ke saath fixed rate arrangement hota hai
+
+Ye commission consignment level par save hoti hai.
+
+Business role:
+- supplier settlement calculate karte waqt commission deduct hoti hai
+
+====================================================================
+12. SUPPLIER SETTLEMENT BUSINESS LOGIC
+====================================================================
+
+Supplier settlement system ka financial closing part hai.
+
+Settlement calculate karte waqt typical components:
+- gross sale of consignment-related goods
+- less commission
+- less linked expenses
+- result = supplier payable amount
+
+Business formula conceptually:
+- supplier payable = gross sale - commission - applicable expenses
+
+Notes:
+- exact accounting treatment business policy ke mutabiq evolve ho sakti hai
+- system ka structure isi liye flexible rakha gaya hai
+- consignment, sale items, aur expenses ke links is calculation ko support karte hain
+
+Settlement statuses ka business meaning:
+- PENDING = abhi supplier ko poora hisaab nahi hua
+- PARTIAL = kuch amount settle ho chuki hai
+- PAID = settlement complete ho gaya
+
+====================================================================
+13. REPORTING BUSINESS LOGIC
+====================================================================
+
+MandiSmart reporting operational aur financial dono needs ko support karti hai.
+
+1. Daily Sales Report
+- ek specific din ki sales dikhati hai
+- mandi ki daily activity samajhne ke kaam aati hai
+
+2. Customer Ledger Report
+- customer ki complete khata history dikhati hai
+- sale aur payment chronology dikhati hai
+- running balance samajhne mein help karti hai
+
+3. Consignment Summary Report
+- truck / consignment ki overall picture dikhati hai
+- kis supplier ka maal aaya, kya becha gaya, kya expense hua
+
+4. Supplier Settlement Report
+- supplier ko payable amount calculate karne ke liye summary deti hai
+
+Business use:
+- Arrti ko cash flow dekhne mein help milti hai
+- operator ko field record reconcile karne mein help milti hai
+- customer aur supplier dono ko transparent hisaab diya ja sakta hai
+
+====================================================================
+14. WHY MANUAL CLOSE IS IMPORTANT
+====================================================================
+
+Ground reality mein mandi ka maal hamesha simple automated stock rules follow nahi karta.
+
+Practical issues:
+- kuch maal waste ho sakta hai
+- kuch maal late sell hota hai
+- kuch maal return ya adjust hota hai
+- operator ko actual floor situation zyada pata hoti hai
+
+Isi liye MandiSmart mein consignment manual close model use karta hai.
+
+Business fayda:
+- real control owner/operator ke paas rehta hai
+- accounting premature close se bachti hai
+- mandi process practical rehta hai
+
+====================================================================
+15. WHY NEGATIVE BALANCE ALLOWED HAI
+====================================================================
+
+Local mandi market mein advance payment aam baat hai.
+
+Misal:
+- customer pehle 10000 jama karwa deta hai
+- baad mein maal uthata hai
+
+Agar system negative balance allow na kare to:
+- advance handle nahi ho sakega
+- real mandi behavior break ho jayega
+
+Is liye MandiSmart negative balance allow karta hai.
+
+Business meaning:
+- negative balance = customer ka advance
+- positive balance = customer par payable
+- zero balance = khata clear
+
+====================================================================
+16. WHY MULTI-ITEM SALES IMPORTANT HAIN
+====================================================================
+
+Mandi mein ek customer aksar ek hi dafa multiple items leta hai.
+
+Misal:
+- 3 bori Aloo
+- 2 bori Pyaaz
+- 1 lot Bhindi
+
+Agar system sirf single-item sale allow kare:
+- extra entries barh jayengi
+- operator ka time zaya hoga
+- invoice aur ledger fragmented ho jayega
+
+Is liye ek sale ke andar multiple sale items allowed hain.
+
+Business fayda:
+- fast entry
+- realistic invoice structure
+- better tracking against consignments
+
+====================================================================
+17. DATA RELATIONSHIP SUMMARY
+====================================================================
+
+Tenant owns:
+- users
+- customers
+- suppliers
+- consignments
+- sales
+- payments
+- expenses
+- settlements
+
+Supplier has:
+- many consignments
+- many settlements
+
+Consignment has:
+- many consignment items
+- many sale items
+- many expenses
+- one optional settlement
+
+Customer has:
+- many sales
+- many payments
+
+Sale has:
+- many sale items
+
+Business understanding:
+- supplier maal bhejta hai
+- consignment banta hai
+- consignment items customers ko sale hoti hain
+- sales customer ledger banati hain
+- payments ledger ko reduce karti hain
+- expenses settlement ko affect karti hain
+
+====================================================================
+18. EXAMPLE FULL BUSINESS SCENARIO
+====================================================================
+
+Scenario:
+- Ahmad Kisan ne ek truck Aloo aur Pyaaz bheja
+- operator ne consignment create kiya
+- commission 6 percent rakhi gayi
+- labour expense aur vehicle rent add kiya gaya
+
+Sales:
+- Sajid ne 10000 ka maal liya
+- Bilal ne 15000 ka maal liya
+- Sajid ne baad mein 4000 payment di
+- Bilal ne abhi payment nahi di
+
+Ledger result:
+- Sajid balance = 6000
+- Bilal balance = 15000
+
+Consignment side:
+- total related sales = 25000
+- labour = 2000
+- vehicle rent = 3000
+- commission = 6 percent of applicable sale total
+
+Settlement side:
+- gross 25000
+- less commission
+- less expenses
+- supplier payable final amount niklega
+
+Operational close:
+- jab owner confirm kare ke truck cycle complete ho gayi
+- consignment CLOSED mark kar di jayegi
+
+====================================================================
+19. WHY THIS SYSTEM FITS LOCAL MANDI BUSINESS
+====================================================================
+
+MandiSmart local mandi workflow ko dhyan mein rakh kar design kiya gaya hai:
+- Urdu-friendly data model
+- manual operational control
+- udhar / advance handling
+- supplier consignment basis accounting
+- Arrti + Mushi role separation
+- multi-tenant SaaS support
+
+Ye system sirf accounting software nahi hai.
+Ye ek mandi operation system hai jo real field process ko digital shape deta hai.
+
+====================================================================
+20. FINAL SUMMARY
+====================================================================
+
+MandiSmart ki core business logic 5 pillars par khari hai:
+
+1. Consignment tracking
+- supplier ka maal batch-wise record hota hai
+
+2. Sale tracking
+- customer ko maal item-wise becha jata hai
+
+3. Ledger management
+- sale debit aur payment credit ki base par khata chalta hai
+
+4. Expense and commission tracking
+- mandi ke actual kharchay aur Arrti commission record hoti hai
+
+5. Settlement and reporting
+- supplier payable, customer khata, aur daily operations transparent bante hain
+
+Agar is logic ko samajh liya jaye to poora MandiSmart system asaani se samjha ja sakta hai, kyun ke APIs aur database isi business flow ke around design kiye gaye hain.
