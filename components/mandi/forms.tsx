@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { Loader2, Plus, Trash2 } from "lucide-react";
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
@@ -21,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { consignmentsApi } from "@/lib/mandi/api";
 import { commissionTypeLabels, expenseTypeLabels, paymentMethodLabels, roleLabels } from "@/lib/mandi/constants";
 import type {
   CommissionType,
@@ -69,10 +72,10 @@ function DialogShell({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto border-white/70 bg-white/95 sm:max-w-3xl dark:border-white/10 dark:bg-slate-950/95">
+      <DialogContent className="max-h-[92vh] overflow-y-auto border-white/70 bg-white/95 sm:max-w-4xl dark:border-white/10 dark:bg-slate-950/95">
         <DialogHeader>
-          <DialogTitle className="font-heading text-2xl dark:text-white">{title}</DialogTitle>
-          <DialogDescription className="leading-7 dark:text-slate-300">{description}</DialogDescription>
+          <DialogTitle className="font-heading text-3xl dark:text-white">{title}</DialogTitle>
+          <DialogDescription className="text-base leading-8 dark:text-slate-300">{description}</DialogDescription>
         </DialogHeader>
         {children}
       </DialogContent>
@@ -89,6 +92,17 @@ function FormActions({ loading, submitLabel }: { loading?: boolean; submitLabel:
       </Button>
     </div>
   );
+}
+
+function toDateTimeValue(value?: string | null) {
+  if (!value) return undefined;
+  if (value.includes("T")) return value;
+  return `${value}T00:00:00.000Z`;
+}
+
+function asSelectValue(value?: string | number | null) {
+  if (value === undefined || value === null || value === "") return "";
+  return String(value);
 }
 
 export function CustomerDialog(props: DialogBaseProps<Customer>) {
@@ -154,7 +168,7 @@ export function CustomerDialog(props: DialogBaseProps<Customer>) {
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
             {...form.register("notes")}
-            className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
+            className="min-h-28 w-full rounded-xl border border-input bg-transparent px-4 py-3 text-lg outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
             placeholder="اگر کوئی خاص بات ہو تو یہاں لکھیں"
           />
         </Field>
@@ -227,7 +241,7 @@ export function SupplierDialog(props: DialogBaseProps<Supplier>) {
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
             {...form.register("notes")}
-            className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
+            className="min-h-28 w-full rounded-xl border border-input bg-transparent px-4 py-3 text-lg outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
             placeholder="معاہدہ یا خاص ہدایات"
           />
         </Field>
@@ -303,7 +317,7 @@ export function UserDialog(props: DialogBaseProps<User & { password?: string }>)
           </Field>
           <Field>
             <FieldLabel>{props.initialValues?.id ? "نیا پاس ورڈ" : "پاس ورڈ"}</FieldLabel>
-            <Input {...form.register("password")} type="password" placeholder="کم از کم 8 حروف" dir="ltr" />
+            <PasswordInput {...form.register("password")} placeholder="کم از کم 8 حروف" dir="ltr" />
           </Field>
           <Field>
             <FieldLabel>حالت</FieldLabel>
@@ -425,7 +439,7 @@ export function ExpenseDialog({
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
             {...form.register("notes")}
-            className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
+            className="min-h-28 w-full rounded-xl border border-input bg-transparent px-4 py-3 text-lg outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
             placeholder="اضافی وضاحت"
           />
         </Field>
@@ -476,13 +490,13 @@ export function PaymentDialog({
               name="customerId"
               rules={{ required: "گاہک ضروری ہے" }}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select value={asSelectValue(field.value)} onValueChange={field.onChange}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="گاہک منتخب کریں" />
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
+                      <SelectItem key={customer.id} value={asSelectValue(customer.id)}>
                         {customer.name}
                       </SelectItem>
                     ))}
@@ -530,7 +544,7 @@ export function PaymentDialog({
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
             {...form.register("notes")}
-            className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
+            className="min-h-28 w-full rounded-xl border border-input bg-transparent px-4 py-3 text-lg outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
             placeholder="ضرورت ہو تو مختصر نوٹ"
           />
         </Field>
@@ -597,13 +611,14 @@ export function ConsignmentDialog({
         onSubmit={form.handleSubmit((values) =>
           props.onSubmit({
             ...values,
+            arrivalDate: toDateTimeValue(values.arrivalDate),
             items: values.items.map((item) => ({
               ...(item.id ? { id: item.id } : {}),
               productNameUrdu: item.productNameUrdu,
               productNameRoman: item.productNameRoman,
               unit: item.unit,
-              quantityReceived: item.quantityReceived,
-              baseRate: item.baseRate,
+              quantityReceived: Number(item.quantityReceived || 0),
+              baseRate: Number(item.baseRate || 0),
             })),
           })
         )}
@@ -676,11 +691,11 @@ export function ConsignmentDialog({
           </Field>
         </FieldGroup>
 
-        <div className="space-y-4 rounded-[1.5rem] border border-[var(--brand-line)] p-4 dark:border-white/10 dark:bg-slate-900/40">
+        <div className="space-y-5 rounded-[1.5rem] border border-[var(--brand-line)] p-5 dark:border-white/10 dark:bg-slate-900/40">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-heading text-xl">آئٹمز</p>
-              <p className="text-sm text-slate-500 dark:text-slate-300">ٹرک میں موجود تمام پروڈکٹس الگ الگ درج کریں۔</p>
+              <p className="font-heading text-2xl">آئٹمز</p>
+              <p className="text-base text-slate-500 dark:text-slate-300">ٹرک میں موجود تمام پروڈکٹس الگ الگ درج کریں۔</p>
             </div>
             <Button
               type="button"
@@ -702,7 +717,7 @@ export function ConsignmentDialog({
 
           <div className="space-y-4">
             {items.fields.map((field, index) => (
-              <div key={field.id} className="rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] p-4 dark:border-white/10 dark:bg-slate-900/60">
+              <div key={field.id} className="rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] p-5 dark:border-white/10 dark:bg-slate-900/60">
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <Field className="xl:col-span-2">
                     <FieldLabel>پروڈکٹ اردو نام</FieldLabel>
@@ -740,7 +755,7 @@ export function ConsignmentDialog({
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
             {...form.register("notes")}
-            className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
+            className="min-h-28 w-full rounded-xl border border-input bg-transparent px-4 py-3 text-lg outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
             placeholder="عملی صورتحال، وزن، یا کسی خاص ہدایت کا نوٹ"
           />
         </Field>
@@ -809,6 +824,39 @@ export function SaleDialog({
     name: "items",
   });
   const watchedItems = form.watch("items");
+  const selectedConsignmentIds = Array.from(
+    new Set(
+      watchedItems
+        .map((item) => asSelectValue(item.consignmentId))
+        .filter(Boolean),
+    ),
+  );
+  const consignmentDetailQueries = useQueries({
+    queries: selectedConsignmentIds.map((id) => ({
+      queryKey: ["consignment", "sale-dialog", id],
+      queryFn: () => consignmentsApi.get(id),
+      staleTime: 60_000,
+      enabled: Boolean(id),
+    })),
+  });
+
+  const relatedItemsByConsignmentId = useMemo(() => {
+    const lookup = new Map<string, Consignment["items"]>();
+
+    consignments.forEach((consignment) => {
+      const key = asSelectValue(consignment.id);
+      if (!key) return;
+      lookup.set(key, consignment.items ?? []);
+    });
+
+    consignmentDetailQueries.forEach((query, index) => {
+      const id = selectedConsignmentIds[index];
+      if (!id || !query.data) return;
+      lookup.set(id, query.data.items ?? []);
+    });
+
+    return lookup;
+  }, [consignmentDetailQueries, consignments, selectedConsignmentIds]);
 
   const total = useMemo(
     () =>
@@ -827,8 +875,11 @@ export function SaleDialog({
         onSubmit={form.handleSubmit((values) => {
           const payload = {
             ...values,
+            saleDate: toDateTimeValue(values.saleDate),
             items: values.items.map((item) => ({
               ...item,
+              quantity: Number(item.quantity || 0),
+              rate: Number(item.rate || 0),
               productNameUrdu:
                 item.productNameUrdu ||
                 consignments
@@ -870,11 +921,11 @@ export function SaleDialog({
           </Field>
         </FieldGroup>
 
-        <div className="space-y-4 rounded-[1.5rem] border border-[var(--brand-line)] p-4 dark:border-white/10 dark:bg-slate-900/40">
+        <div className="space-y-5 rounded-[1.5rem] border border-[var(--brand-line)] p-5 dark:border-white/10 dark:bg-slate-900/40">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-heading text-xl">فروخت آئٹمز</p>
-              <p className="text-sm text-slate-500 dark:text-slate-300">گاڑی سے آئٹم منتخب کریں، مقدار اور ریٹ درج کریں۔</p>
+              <p className="font-heading text-2xl">فروخت آئٹمز</p>
+              <p className="text-base text-slate-500 dark:text-slate-300">گاڑی سے آئٹم منتخب کریں، مقدار اور ریٹ درج کریں۔</p>
             </div>
             <Button
               type="button"
@@ -896,14 +947,13 @@ export function SaleDialog({
 
           <div className="space-y-4">
             {items.fields.map((field, index) => {
-              const consignmentId = form.watch(`items.${index}.consignmentId`);
-              const relatedItems =
-                consignments.find((consignment) => consignment.id === consignmentId)?.items ?? [];
+              const consignmentId = asSelectValue(form.watch(`items.${index}.consignmentId`));
+              const relatedItems = relatedItemsByConsignmentId.get(consignmentId) ?? [];
               const quantity = Number(form.watch(`items.${index}.quantity`) || 0);
               const rate = Number(form.watch(`items.${index}.rate`) || 0);
 
               return (
-                <div key={field.id} className="rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] p-4 dark:border-white/10 dark:bg-slate-900/60">
+                <div key={field.id} className="rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] p-5 dark:border-white/10 dark:bg-slate-900/60">
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                     <Field>
                       <FieldLabel>گاڑی</FieldLabel>
@@ -912,10 +962,12 @@ export function SaleDialog({
                         name={`items.${index}.consignmentId`}
                         render={({ field: selectField }) => (
                           <Select
-                            value={selectField.value}
+                            value={asSelectValue(selectField.value)}
                             onValueChange={(value) => {
                               selectField.onChange(value);
                               form.setValue(`items.${index}.consignmentItemId`, "");
+                              form.setValue(`items.${index}.productNameUrdu`, "");
+                              form.setValue(`items.${index}.rate`, 0);
                             }}
                           >
                             <SelectTrigger className="w-full">
@@ -923,7 +975,7 @@ export function SaleDialog({
                             </SelectTrigger>
                             <SelectContent>
                               {consignments.map((consignment) => (
-                                <SelectItem key={consignment.id} value={consignment.id}>
+                                <SelectItem key={consignment.id} value={asSelectValue(consignment.id)}>
                                   {consignment.supplier?.name ?? "سپلائر"} - {consignment.vehicleNumber || "بغیر نمبر"}
                                 </SelectItem>
                               ))}
@@ -939,10 +991,10 @@ export function SaleDialog({
                         name={`items.${index}.consignmentItemId`}
                         render={({ field: selectField }) => (
                           <Select
-                            value={selectField.value}
+                            value={asSelectValue(selectField.value)}
                             onValueChange={(value) => {
                               selectField.onChange(value);
-                              const selected = relatedItems.find((item) => item.id === value);
+                              const selected = relatedItems.find((item) => asSelectValue(item.id) === value);
                               form.setValue(`items.${index}.productNameUrdu`, selected?.productNameUrdu ?? "");
                               if (!form.getValues(`items.${index}.rate`)) {
                                 form.setValue(`items.${index}.rate`, selected?.baseRate ?? 0);
@@ -956,7 +1008,7 @@ export function SaleDialog({
                               {relatedItems
                                 .filter((item) => item.id)
                                 .map((item) => (
-                                  <SelectItem key={item.id} value={item.id!}>
+                                  <SelectItem key={item.id} value={asSelectValue(item.id)}>
                                     {item.productNameUrdu}
                                   </SelectItem>
                                 ))}
@@ -964,6 +1016,12 @@ export function SaleDialog({
                           </Select>
                         )}
                       />
+                      {!consignmentId ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-300">پہلے گاڑی منتخب کریں۔</p>
+                      ) : null}
+                      {consignmentId && !relatedItems.length ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-300">اس گاڑی کے آئٹمز لوڈ ہو رہے ہیں یا ابھی موجود نہیں۔</p>
+                      ) : null}
                     </Field>
                     <Field>
                       <FieldLabel>مقدار</FieldLabel>
@@ -975,7 +1033,7 @@ export function SaleDialog({
                     </Field>
                     <Field>
                       <FieldLabel>لائن کل</FieldLabel>
-                      <div className="flex h-10 items-center rounded-md border border-input bg-white px-3 text-sm font-semibold dark:bg-slate-900/70 dark:text-white">
+                      <div className="flex h-12 items-center rounded-xl border border-input bg-white px-4 text-base font-semibold dark:bg-slate-900/70 dark:text-white">
                         {formatCurrency(quantity * rate)}
                       </div>
                     </Field>
@@ -994,7 +1052,7 @@ export function SaleDialog({
 
         <div className="rounded-[1.5rem] border border-[var(--brand-line)] bg-[var(--surface-soft)] p-4 dark:border-white/10 dark:bg-slate-900/60">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500 dark:text-slate-300">مجموعی فروخت</p>
+            <p className="text-base text-slate-500 dark:text-slate-300">مجموعی فروخت</p>
             <p className="font-heading text-3xl text-slate-950 dark:text-white">{formatCurrency(total)}</p>
           </div>
         </div>
@@ -1003,7 +1061,7 @@ export function SaleDialog({
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
             {...form.register("notes")}
-            className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
+            className="min-h-28 w-full rounded-xl border border-input bg-transparent px-4 py-3 text-lg outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 dark:bg-slate-900/50 dark:text-white"
             placeholder="کسی خاص رعایت یا نوٹ"
           />
         </Field>

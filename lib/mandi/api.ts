@@ -108,6 +108,62 @@ function normalizeList<T>(data: unknown, keys: string[]): ListResponse<T> {
   return { items, meta: meta ?? undefined };
 }
 
+function normalizeDateTime(value?: string | null) {
+  if (!value) return value;
+  if (value.includes("T")) return value;
+  return `${value}T00:00:00.000Z`;
+}
+
+function normalizeConsignmentPayload(payload: Partial<Consignment>) {
+  return {
+    ...payload,
+    arrivalDate: normalizeDateTime(payload.arrivalDate),
+    commissionValue:
+      payload.commissionValue === undefined || payload.commissionValue === null
+        ? payload.commissionValue
+        : Number(payload.commissionValue),
+    items: payload.items?.map((item) => ({
+      ...item,
+      quantityReceived:
+        item.quantityReceived === undefined || item.quantityReceived === null
+          ? item.quantityReceived
+          : Number(item.quantityReceived),
+      baseRate:
+        item.baseRate === undefined || item.baseRate === null
+          ? item.baseRate
+          : Number(item.baseRate),
+    })),
+  };
+}
+
+function normalizeSalePayload(payload: Partial<Sale>) {
+  return {
+    ...payload,
+    saleDate: normalizeDateTime(payload.saleDate),
+    items: payload.items?.map((item) => ({
+      ...item,
+      quantity: item.quantity === undefined || item.quantity === null ? item.quantity : Number(item.quantity),
+      rate: item.rate === undefined || item.rate === null ? item.rate : Number(item.rate),
+    })),
+  };
+}
+
+function normalizePaymentPayload(payload: Partial<Payment>) {
+  return {
+    ...payload,
+    paymentDate: normalizeDateTime(payload.paymentDate),
+    amount: payload.amount === undefined || payload.amount === null ? payload.amount : Number(payload.amount),
+  };
+}
+
+function normalizeExpensePayload(payload: Partial<Expense>) {
+  return {
+    ...payload,
+    expenseDate: normalizeDateTime(payload.expenseDate),
+    amount: payload.amount === undefined || payload.amount === null ? payload.amount : Number(payload.amount),
+  };
+}
+
 export const authApi = {
   login(payload: LoginPayload) {
     return request<AuthSession>("/auth/login", {
@@ -248,13 +304,13 @@ export const consignmentsApi = {
   create(payload: Partial<Consignment>) {
     return request<unknown>("/consignments", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeConsignmentPayload(payload)),
     }).then((data) => pickObject<Consignment>(data, ["consignment", "data"]) ?? (data as Consignment));
   },
   update(id: string, payload: Partial<Consignment>) {
     return request<unknown>(`/consignments/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeConsignmentPayload(payload)),
     }).then((data) => pickObject<Consignment>(data, ["consignment", "data"]) ?? (data as Consignment));
   },
   close(id: string, notes?: string) {
@@ -282,13 +338,13 @@ export const salesApi = {
   create(payload: Partial<Sale>) {
     return request<unknown>("/sales", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeSalePayload(payload)),
     }).then((data) => pickObject<Sale>(data, ["sale", "data"]) ?? (data as Sale));
   },
   update(id: string, payload: Partial<Sale>) {
     return request<unknown>(`/sales/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeSalePayload(payload)),
     }).then((data) => pickObject<Sale>(data, ["sale", "data"]) ?? (data as Sale));
   },
   remove(id: string) {
@@ -310,13 +366,13 @@ export const paymentsApi = {
   create(payload: Partial<Payment>) {
     return request<unknown>("/payments", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizePaymentPayload(payload)),
     }).then((data) => pickObject<Payment>(data, ["payment", "data"]) ?? (data as Payment));
   },
   update(id: string, payload: Partial<Payment>) {
     return request<unknown>(`/payments/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizePaymentPayload(payload)),
     }).then((data) => pickObject<Payment>(data, ["payment", "data"]) ?? (data as Payment));
   },
   remove(id: string) {
@@ -338,13 +394,13 @@ export const expensesApi = {
   create(payload: Partial<Expense>) {
     return request<unknown>("/expenses", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeExpensePayload(payload)),
     }).then((data) => pickObject<Expense>(data, ["expense", "data"]) ?? (data as Expense));
   },
   update(id: string, payload: Partial<Expense>) {
     return request<unknown>(`/expenses/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeExpensePayload(payload)),
     }).then((data) => pickObject<Expense>(data, ["expense", "data"]) ?? (data as Expense));
   },
   remove(id: string) {

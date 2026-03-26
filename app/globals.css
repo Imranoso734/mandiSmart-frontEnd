@@ -79,8 +79,8 @@
 
 :root {
   --radius: 0.625rem;
-  --font-body: "Noto Sans Arabic", "Noto Nastaliq Urdu", "Segoe UI", Tahoma, sans-serif;
-  --font-heading: "Noto Sans Arabic", "Noto Nastaliq Urdu", serif;
+  --font-body: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif;
+  --font-heading: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif;
 
   --background: oklch(0.99 0.005 260);
   --foreground: oklch(0.18 0.01 260);
@@ -187,15 +187,39 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-body), sans-serif;
-    font-size: 18px;
-    line-height: 1.85;
+    font-family: var(--font-body), serif;
+    font-size: 19px;
+    line-height: 1.95;
     letter-spacing: 0;
     background:
-      radial-gradient(circle at top right, rgba(225, 161, 75, 0.18), transparent 28%),
-      radial-gradient(circle at bottom left, rgba(11, 95, 73, 0.16), transparent 26%),
-      linear-gradient(180deg, #f8f4eb 0%, #f1eee4 100%);
+      radial-gradient(circle at top right, rgba(215, 188, 132, 0.14), transparent 24%),
+      radial-gradient(circle at bottom left, rgba(85, 118, 84, 0.09), transparent 20%),
+      linear-gradient(180deg, #fcfaf4 0%, #f6f1e7 100%);
     min-height: 100vh;
+  }
+
+  body,
+  body :where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p,
+    span,
+    label,
+    li,
+    a,
+    button,
+    input,
+    textarea,
+    select,
+    th,
+    td,
+    div
+  ) {
+    font-family: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif !important;
   }
 
   .dark body {
@@ -213,7 +237,7 @@
   h6,
   .font-heading {
     font-family: "Mandi Jameel", "Jameel Noori Nastaleeq", var(--font-heading), serif;
-    line-height: 1.7;
+    line-height: 1.8;
   }
 
   input,
@@ -222,7 +246,7 @@
   button {
     font-family: inherit;
     font-size: 1rem;
-    line-height: 1.8;
+    line-height: 1.9;
   }
 
   p,
@@ -231,22 +255,22 @@
   th,
   td,
   span {
-    line-height: 1.85;
+    line-height: 1.95;
   }
 
   input,
   textarea,
   select {
-    font-size: 1.02rem;
+    font-size: 1.06rem;
   }
 
   :root {
-    --brand-forest: #0e4e3c;
-    --brand-forest-dark: #0a3529;
-    --brand-sand: #dcb47a;
-    --brand-line: #e8dfcf;
-    --surface-soft: #f8f3e8;
-    --surface-warm: #fffaf1;
+    --brand-forest: #326a44;
+    --brand-forest-dark: #234a2f;
+    --brand-sand: #d9b66d;
+    --brand-line: #d9cfbc;
+    --surface-soft: #fbf6ee;
+    --surface-warm: #fffdf8;
   }
 
   .text-sm {
@@ -255,5 +279,44 @@
 
   .text-xs {
     font-size: 0.92rem;
+  }
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  aside,
+  header,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .rounded-\[2rem\],
+  .rounded-\[1\.75rem\],
+  .rounded-\[1\.5rem\] {
+    box-shadow: none !important;
+  }
+
+  .dark,
+  .dark body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

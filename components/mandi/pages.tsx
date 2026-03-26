@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -35,6 +35,14 @@ import {
   reportLinks,
   roleLabels,
 } from "@/lib/mandi/constants";
+import {
+  createConsignmentSummaryPdf,
+  createCustomerLedgerPdf,
+  createDailySalesPdf,
+  createSupplierSettlementPdf,
+  downloadPdfBlob,
+  openPdfBlob,
+} from "@/lib/mandi/report-pdf";
 import type {
   Consignment,
   ConsignmentSummaryReport,
@@ -61,6 +69,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ActionButton,
@@ -72,7 +81,8 @@ import {
   LoadingState,
   MetaStat,
   PageHeader,
-  PrintButton,
+  PdfDownloadButton,
+  ReportPrintButton,
   RoleGuard,
   SearchToolbar,
   SectionCard,
@@ -90,6 +100,7 @@ import {
   UserDialog,
 } from "@/components/mandi/forms";
 import { sessionStore } from "@/lib/mandi/session";
+import { cn } from "@/lib/utils";
 
 type MutationMode = "create" | "update";
 
@@ -98,6 +109,10 @@ function useCrudActions<T extends { id: string }>(
   createFn: (payload: Partial<T>) => Promise<unknown>,
   updateFn: (id: string, payload: Partial<T>) => Promise<unknown>,
   deleteFn: (id: string) => Promise<unknown>,
+  options?: {
+    onSaveSuccess?: () => void;
+    onDeleteSuccess?: () => void;
+  },
 ) {
   const queryClient = useQueryClient();
 
@@ -110,6 +125,7 @@ function useCrudActions<T extends { id: string }>(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [key] });
+      options?.onSaveSuccess?.();
       toast.success("کامیابی سے محفوظ ہو گیا");
     },
     onError: (error: Error) => toast.error(error.message),
@@ -119,6 +135,7 @@ function useCrudActions<T extends { id: string }>(
     mutationFn: deleteFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [key] });
+      options?.onDeleteSuccess?.();
       toast.success("مٹا دیا گیا");
     },
     onError: (error: Error) => toast.error(error.message),
@@ -132,7 +149,16 @@ export function LoginPageClient() {
   const mutation = useMutation({
     mutationFn: authApi.login,
     onSuccess: async (data) => {
-      sessionStore.setSession(data);
+      if (form.rememberMe) {
+        sessionStore.setRememberedLogin({
+          tenantSlug: form.tenantSlug,
+          email: form.email,
+          password: form.password,
+        }, true);
+      } else {
+        sessionStore.clearRememberedLogin();
+      }
+      sessionStore.setSession(data, { remember: form.rememberMe });
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       toast.success("آپ آ گئے ہیں");
       window.location.href = "/dashboard";
@@ -144,7 +170,25 @@ export function LoginPageClient() {
     tenantSlug: "",
     email: "",
     password: "",
+    rememberMe: true,
   });
+
+  useEffect(() => {
+    const savedLogin = sessionStore.getRememberedLogin();
+    const rememberMe = sessionStore.getRememberPreference();
+
+    if (!savedLogin) {
+      setForm((prev) => ({ ...prev, rememberMe }));
+      return;
+    }
+
+    setForm({
+      tenantSlug: savedLogin.tenantSlug ?? "",
+      email: savedLogin.email ?? "",
+      password: savedLogin.password ?? "",
+      rememberMe,
+    });
+  }, []);
 
   return (
     <div className="w-full max-w-xl rounded-[2rem] border border-white/70 bg-white/92 p-6 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.5)] dark:border-white/10 dark:bg-slate-950/80 lg:p-8">
@@ -186,16 +230,27 @@ export function LoginPageClient() {
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">پاس ورڈ</label>
-            <Input
+            <PasswordInput
               value={form.password}
               onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              type="password"
               placeholder="پاس ورڈ"
               dir="ltr"
               required
             />
           </div>
         </div>
+
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-200">
+          <span>
+            مجھے یاد رکھیں
+          </span>
+          <input
+            type="checkbox"
+            checked={form.rememberMe}
+            onChange={(event) => setForm((prev) => ({ ...prev, rememberMe: event.target.checked }))}
+            className="size-4 accent-[var(--brand-forest)]"
+          />
+        </label>
 
         <Button type="submit" className="w-full" disabled={mutation.isPending}>
           {mutation.isPending ? "انتظار کریں..." : "لاگ اِن کریں"}
@@ -269,6 +324,11 @@ export function DashboardPageClient() {
   const customerBalances = customers.map((customer) => calculateBalance(customer));
   const outstanding = customerBalances.filter((balance) => balance > 0).reduce((sum, value) => sum + value, 0);
   const advance = customerBalances.filter((balance) => balance < 0).reduce((sum, value) => sum + Math.abs(value), 0);
+  const recentSales = sales.slice(0, 4);
+  const topOutstandingCustomers = customers
+    .slice()
+    .sort((a, b) => calculateBalance(b) - calculateBalance(a))
+    .slice(0, 4);
 
   return (
     <div className="space-y-6">
@@ -276,7 +336,10 @@ export function DashboardPageClient() {
         title="آج کی منڈی کی صورت حال"
         description="یہ ڈیش بورڈ مالک اور مشی دونوں کو روزانہ کی فروخت، کھلی گاڑیاں، حالیہ وصولیوں اور خرچوں کا فوری خلاصہ دیتا ہے۔"
         action={
-          <>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" asChild>
+              <Link href="/payments">نئی وصولی</Link>
+            </Button>
             {session?.role === "OWNER" ? (
               <Button variant="outline" asChild>
                 <Link href="/reports">رپورٹس</Link>
@@ -288,7 +351,7 @@ export function DashboardPageClient() {
                 نئی فروخت
               </Link>
             </Button>
-          </>
+          </div>
         }
       />
 
@@ -297,79 +360,82 @@ export function DashboardPageClient() {
           {
             title: "آج کی فروخت",
             value: formatCurrency(todaySales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0)),
-            help: `${todaySales.length} اندراج`,
-            tone: "warm",
-          },
-          {
-            title: "کھلی گاڑیاں",
-            value: formatNumber(openConsignments.length),
-            help: "جنہیں ابھی بند نہیں کیا گیا",
-            tone: "default",
+            help: `${todaySales.length || 0} اندراج`,
+            tone: "success",
           },
           {
             title: "واجب الادا",
             value: formatCurrency(outstanding),
             help: "گاہکوں سے قابل وصول رقم",
-            tone: "danger",
+            tone: "warm",
           },
           {
-            title: "ایڈوانس رقم",
-            value: formatCurrency(advance),
-            help: "منفی بیلنس والے گاہک",
-            tone: "success",
+            title: "آج کی وصولی",
+            value: formatCurrency(payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)),
+            help: "آج درج شدہ ادائیگیاں",
+            tone: "default",
+          },
+          {
+            title: "آج کے خرچے",
+            value: formatCurrency(expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)),
+            help: `${openConsignments.length} کھلی گاڑیاں`,
+            tone: "danger",
           },
         ]}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <SectionCard
-          title="تیز کام"
-          description="روزانہ آپریشن کے زیادہ استعمال ہونے والے راستے"
-        >
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { href: "/consignments", icon: Truck, title: "نئی گاڑی", text: "سپلائر کا ٹرک وصول کریں" },
-              { href: "/sales", icon: CircleDollarSign, title: "نئی فروخت", text: "گاہک کو مال جاری کریں" },
-              { href: "/payments", icon: HandCoins, title: "نئی وصولی", text: "گاہک کی ادائیگی درج کریں" },
-              { href: "/expenses", icon: ReceiptText, title: "نیا خرچہ", text: "مندی خرچہ درج کریں" },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="rounded-[1.5rem] border border-[var(--brand-line)] bg-[var(--surface-soft)] p-4 transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-slate-900/60"
-              >
-                <item.icon className="size-9 text-[var(--brand-forest)]" />
-                <p className="mt-4 font-heading text-xl text-slate-950 dark:text-white">{item.title}</p>
-                <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">{item.text}</p>
-              </Link>
-            ))}
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.5fr]">
+        <SectionCard title="گاہک کھاتہ" description="نمایاں واجبات اور ایڈوانس ایک نظر میں">
+          <div className="space-y-3">
+            {topOutstandingCustomers.length ? (
+              topOutstandingCustomers.map((customer) => {
+                const balance = calculateBalance(customer);
+                return (
+                  <div key={customer.id} className="flex items-center justify-between border-b border-[var(--brand-line)] pb-4 last:border-b-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="truncate font-heading text-[1.9rem] text-slate-950 dark:text-white">{customer.name}</p>
+                      <p className={cn(
+                        "mt-1 inline-flex rounded-full border px-3 py-1 text-sm",
+                        getBalanceTone(balance),
+                      )}>
+                        {getBalanceLabel(balance)}
+                      </p>
+                    </div>
+                    <p className={cn(
+                      "font-heading text-[1.9rem]",
+                      balance < 0 ? "text-[var(--brand-forest)]" : "text-[#c7951d]",
+                    )}>
+                      {formatCurrency(Math.abs(balance))}
+                    </p>
+                  </div>
+                );
+              })
+            ) : (
+              <EmptyState title="گاہک موجود نہیں" description="گاہک بننے کے بعد یہاں ان کا کھاتہ نظر آئے گا۔" />
+            )}
+            <Button variant="outline" asChild className="mt-2 w-full">
+              <Link href="/customers">تمام گاہک دیکھیں</Link>
+            </Button>
           </div>
         </SectionCard>
 
-        <SectionCard title="آج کے اشارے" description="عملی فیصلے لینے کے لئے فوری خلاصہ">
-          <div className="grid gap-3">
-            <MetaStat title="حالیہ وصولی" value={formatCurrency(payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0))} />
-            <MetaStat title="حالیہ خرچے" value={formatCurrency(expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0))} />
-            <MetaStat title="آج کی انٹریاں" value={formatNumber(todaySales.length + payments.length + expenses.length)} />
-            <MetaStat title="رول" value={session?.role === "OWNER" ? "مالک" : "مشی"} />
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <SectionCard title="حالیہ فروخت" description="تازہ فروخت اندراجات">
-          {sales.length ? (
-            <div className="space-y-3">
-              {sales.map((sale) => (
-                <div key={sale.id} className="flex items-start justify-between rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] p-4 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">{sale.customer?.name ?? "گاہک"}</p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{formatDate(sale.saleDate)}</p>
-                  </div>
-                  <div className="text-left">
-                    <p className="font-heading text-2xl text-slate-950 dark:text-white">{formatCurrency(sale.totalAmount)}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-300">{sale.items?.length ?? 0} آئٹمز</p>
-                  </div>
+        <SectionCard title="حالیہ فروخت" description="تازہ اندراجات">
+          {recentSales.length ? (
+            <div className="overflow-hidden rounded-[1.5rem] border border-[var(--brand-line)] bg-[var(--surface-soft)]">
+              <div className="grid grid-cols-4 border-b border-[var(--brand-line)] bg-[#f4efe6] px-5 py-3 text-[1.05rem] text-slate-700">
+                <p>تاریخ</p>
+                <p>گاہک</p>
+                <p>رقم</p>
+                <p>حالت</p>
+              </div>
+              {recentSales.map((sale) => (
+                <div key={sale.id} className="grid grid-cols-4 items-center border-b border-[var(--brand-line)] px-5 py-4 last:border-b-0">
+                  <p className="text-[1.05rem] text-slate-600 dark:text-slate-300">{formatDate(sale.saleDate)}</p>
+                  <p className="font-heading text-[1.8rem] text-slate-950 dark:text-white">{sale.customer?.name ?? "گاہک"}</p>
+                  <p className="font-heading text-[1.7rem] text-[var(--brand-forest)]">{formatCurrency(sale.totalAmount)}</p>
+                  <span className="inline-flex w-fit rounded-full border border-[#b9d1e2] bg-[#edf5fb] px-3 py-1 text-sm text-[#4d80a8]">
+                    مکمل
+                  </span>
                 </div>
               ))}
             </div>
@@ -377,34 +443,30 @@ export function DashboardPageClient() {
             <EmptyState title="ابھی فروخت نہیں" description="جیسے ہی نئی فروخت درج ہوگی، یہاں نظر آئے گی۔" />
           )}
         </SectionCard>
-
-        <SectionCard title="گاہک واجبات" description="سب سے نمایاں گاہک بیلنس">
-          {customers.length ? (
-            <div className="space-y-3">
-              {customers
-                .slice()
-                .sort((a, b) => calculateBalance(b) - calculateBalance(a))
-                .slice(0, 6)
-                .map((customer) => {
-                  const balance = calculateBalance(customer);
-                  return (
-                    <div key={customer.id} className="flex items-center justify-between rounded-2xl border border-[var(--brand-line)] bg-white p-4 dark:border-white/10 dark:bg-slate-950/70">
-                      <div>
-                        <p className="font-semibold text-slate-900 dark:text-white">{customer.name}</p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{getBalanceLabel(balance)}</p>
-                      </div>
-                      <div className={`rounded-full border px-4 py-2 text-sm ${getBalanceTone(balance)}`}>
-                        {formatCurrency(Math.abs(balance))}
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          ) : (
-            <EmptyState title="گاہک موجود نہیں" description="گاہک بنائیں تاکہ کھاتہ اور وصولی شروع ہو سکے۔" />
-          )}
-        </SectionCard>
       </div>
+
+      <SectionCard title="تیز کام" description="روزانہ آپریشن کے زیادہ استعمال ہونے والے راستے">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { href: "/consignments", icon: Truck, title: "نئی گاڑی", text: "سپلائر کا ٹرک وصول کریں" },
+            { href: "/sales", icon: CircleDollarSign, title: "نئی فروخت", text: "گاہک کو مال جاری کریں" },
+            { href: "/payments", icon: HandCoins, title: "نئی وصولی", text: "گاہک کی ادائیگی درج کریں" },
+            { href: "/expenses", icon: ReceiptText, title: "نیا خرچہ", text: "منڈی خرچہ درج کریں" },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="rounded-[1.35rem] border border-[var(--brand-line)] bg-[#fffdf8] p-5 transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-slate-900/60"
+            >
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-[#f3ece0] text-[var(--brand-forest)]">
+                <item.icon className="size-6" />
+              </span>
+              <p className="mt-4 font-heading text-[1.8rem] text-slate-950 dark:text-white">{item.title}</p>
+              <p className="mt-2 text-[1.02rem] leading-8 text-slate-600 dark:text-slate-300">{item.text}</p>
+            </Link>
+          ))}
+        </div>
+      </SectionCard>
     </div>
   );
 }
@@ -426,6 +488,12 @@ export function CustomersPageClient() {
     customersApi.create,
     customersApi.update,
     customersApi.remove,
+    {
+      onSaveSuccess: () => {
+        setOpen(false);
+        setEditing(null);
+      },
+    },
   );
 
   const items = query.data?.items ?? [];
@@ -513,7 +581,10 @@ export function CustomersPageClient() {
 
       <CustomerDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={editing}
         loading={saveMutation.isPending}
         onSubmit={(values) =>
@@ -654,6 +725,12 @@ export function SuppliersPageClient() {
     suppliersApi.create,
     suppliersApi.update,
     suppliersApi.remove,
+    {
+      onSaveSuccess: () => {
+        setOpen(false);
+        setEditing(null);
+      },
+    },
   );
 
   const items = query.data?.items ?? [];
@@ -717,7 +794,10 @@ export function SuppliersPageClient() {
 
       <SupplierDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={editing}
         loading={saveMutation.isPending}
         onSubmit={(values) => saveMutation.mutate({ mode: editing ? "update" : "create", id: editing?.id, values })}
@@ -846,6 +926,12 @@ export function UsersPageClient() {
     (payload) => usersApi.create(payload),
     (id, payload) => usersApi.update(id, payload),
     usersApi.remove,
+    {
+      onSaveSuccess: () => {
+        setOpen(false);
+        setEditing(null);
+      },
+    },
   );
 
   if (session?.role !== "OWNER") {
@@ -916,7 +1002,10 @@ export function UsersPageClient() {
 
       <UserDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={editing}
         loading={saveMutation.isPending}
         onSubmit={(values) => saveMutation.mutate({ mode: editing ? "update" : "create", id: editing?.id, values })}
@@ -1060,6 +1149,8 @@ export function ConsignmentsPageClient() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["consignments"] });
+      setOpen(false);
+      setEditing(null);
       toast.success("گاڑی محفوظ ہو گئی");
     },
     onError: (error: Error) => toast.error(error.message),
@@ -1150,7 +1241,10 @@ export function ConsignmentsPageClient() {
 
       <ConsignmentDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={editing}
         loading={saveMutation.isPending}
         suppliers={suppliers}
@@ -1356,6 +1450,8 @@ export function SalesPageClient() {
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
+      setOpen(false);
+      setEditing(null);
       toast.success("فروخت محفوظ ہو گئی");
     },
     onError: (error: Error) => toast.error(error.message),
@@ -1450,7 +1546,10 @@ export function SalesPageClient() {
 
       <SaleDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={
           editing
             ? {
@@ -1505,6 +1604,12 @@ export function PaymentsPageClient() {
     paymentsApi.create,
     paymentsApi.update,
     paymentsApi.remove,
+    {
+      onSaveSuccess: () => {
+        setOpen(false);
+        setEditing(null);
+      },
+    },
   );
 
   const items = paymentsQuery.data?.items ?? [];
@@ -1600,7 +1705,10 @@ export function PaymentsPageClient() {
 
       <PaymentDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={editing}
         loading={saveMutation.isPending}
         customers={customers}
@@ -1647,6 +1755,12 @@ export function ExpensesPageClient() {
     expensesApi.create,
     expensesApi.update,
     expensesApi.remove,
+    {
+      onSaveSuccess: () => {
+        setOpen(false);
+        setEditing(null);
+      },
+    },
   );
 
   const items = expensesQuery.data?.items ?? [];
@@ -1743,7 +1857,10 @@ export function ExpensesPageClient() {
 
       <ExpenseDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setEditing(null);
+        }}
         initialValues={editing}
         loading={saveMutation.isPending}
         consignments={consignments}
@@ -1801,6 +1918,7 @@ export function DailySalesReportPageClient() {
   const session = useSession();
   const isOwner = session?.role === "OWNER";
   const [date, setDate] = useState(todayDate());
+  const [exporting, setExporting] = useState<"pdf" | "print" | null>(null);
   const query = useQuery({
     queryKey: ["reports", "daily-sales", date],
     queryFn: () => reportsApi.dailySales(date),
@@ -1818,9 +1936,39 @@ export function DailySalesReportPageClient() {
           title="روزانہ فروخت رپورٹ"
           description="ایک دن کی فروخت، انوائس کی تعداد اور مجموعی رقم واضح طور پر دیکھیں۔"
           action={
-            <div className="flex gap-2">
+            <div className="flex gap-2 print:hidden">
               <Input value={date} onChange={(event) => setDate(event.target.value)} type="date" className="w-44 bg-white dark:bg-slate-900/70 dark:border-white/10" />
-              <PrintButton />
+              <PdfDownloadButton
+                loading={exporting === "pdf"}
+                onClick={async () => {
+                  if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                  try {
+                    setExporting("pdf");
+                    const blob = await createDailySalesPdf(query.data);
+                    downloadPdfBlob(blob, `daily-sales-report-${date}.pdf`);
+                    toast.success("پی ڈی ایف ڈاؤن لوڈ ہو گئی");
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "پی ڈی ایف تیار نہیں ہو سکی");
+                  } finally {
+                    setExporting(null);
+                  }
+                }}
+              />
+              <ReportPrintButton
+                loading={exporting === "print"}
+                onClick={async () => {
+                  if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                  try {
+                    setExporting("print");
+                    const blob = await createDailySalesPdf(query.data);
+                    openPdfBlob(blob);
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "پرنٹ فائل تیار نہیں ہو سکی");
+                  } finally {
+                    setExporting(null);
+                  }
+                }}
+              />
             </div>
           }
         />
@@ -1874,6 +2022,7 @@ export function CustomerLedgerReportPageClient({ customerId: initialCustomerId }
   const [customerId, setCustomerId] = useState(initialCustomerId ?? "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [exporting, setExporting] = useState<"pdf" | "print" | null>(null);
   const customersQuery = useQuery({
     queryKey: ["customers", "ledger-options"],
     queryFn: () => customersApi.list({ limit: 100 }),
@@ -1895,7 +2044,41 @@ export function CustomerLedgerReportPageClient({ customerId: initialCustomerId }
       <PageHeader
         title="گاہک کھاتہ رپورٹ"
         description="ڈیبٹ، کریڈٹ اور چلتے بیلنس کے ساتھ گاہک کا مکمل حساب سمجھیں۔"
-        action={<PrintButton />}
+        action={
+          <div className="flex gap-2 print:hidden">
+            <PdfDownloadButton
+              loading={exporting === "pdf"}
+              onClick={async () => {
+                if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                try {
+                  setExporting("pdf");
+                  const blob = await createCustomerLedgerPdf(query.data);
+                  downloadPdfBlob(blob, `customer-ledger-${customerId || "report"}.pdf`);
+                  toast.success("پی ڈی ایف ڈاؤن لوڈ ہو گئی");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "پی ڈی ایف تیار نہیں ہو سکی");
+                } finally {
+                  setExporting(null);
+                }
+              }}
+            />
+            <ReportPrintButton
+              loading={exporting === "print"}
+              onClick={async () => {
+                if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                try {
+                  setExporting("print");
+                  const blob = await createCustomerLedgerPdf(query.data);
+                  openPdfBlob(blob);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "پرنٹ فائل تیار نہیں ہو سکی");
+                } finally {
+                  setExporting(null);
+                }
+              }}
+            />
+          </div>
+        }
       />
 
       <SectionCard title="فلٹر" description="گاہک اور تاریخ منتخب کریں">
@@ -1978,6 +2161,7 @@ export function ConsignmentSummaryReportPageClient({ consignmentId: initialConsi
   const session = useSession();
   const isOwner = session?.role === "OWNER";
   const [consignmentId, setConsignmentId] = useState(initialConsignmentId ?? "");
+  const [exporting, setExporting] = useState<"pdf" | "print" | null>(null);
   const consignmentsQuery = useQuery({
     queryKey: ["consignments", "summary-options"],
     queryFn: () => consignmentsApi.list({ limit: 100 }),
@@ -1999,7 +2183,41 @@ export function ConsignmentSummaryReportPageClient({ consignmentId: initialConsi
       <PageHeader
         title="مال کا خلاصہ"
         description="ٹرک، فروخت، خرچے اور باقی صورتحال کو سمجھنے کے لئے۔"
-        action={<PrintButton />}
+        action={
+          <div className="flex gap-2 print:hidden">
+            <PdfDownloadButton
+              loading={exporting === "pdf"}
+              onClick={async () => {
+                if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                try {
+                  setExporting("pdf");
+                  const blob = await createConsignmentSummaryPdf(query.data);
+                  downloadPdfBlob(blob, `maal-summary-${consignmentId || "report"}.pdf`);
+                  toast.success("پی ڈی ایف ڈاؤن لوڈ ہو گئی");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "پی ڈی ایف تیار نہیں ہو سکی");
+                } finally {
+                  setExporting(null);
+                }
+              }}
+            />
+            <ReportPrintButton
+              loading={exporting === "print"}
+              onClick={async () => {
+                if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                try {
+                  setExporting("print");
+                  const blob = await createConsignmentSummaryPdf(query.data);
+                  openPdfBlob(blob);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "پرنٹ فائل تیار نہیں ہو سکی");
+                } finally {
+                  setExporting(null);
+                }
+              }}
+            />
+          </div>
+        }
       />
 
       <SectionCard title="گاڑی منتخب کریں" description="جس ٹرک یا لوڈ کا خلاصہ دیکھنا ہو وہ منتخب کریں">
@@ -2091,6 +2309,7 @@ export function SupplierSettlementReportPageClient({ consignmentId: initialConsi
   const session = useSession();
   const isOwner = session?.role === "OWNER";
   const [consignmentId, setConsignmentId] = useState(initialConsignmentId ?? "");
+  const [exporting, setExporting] = useState<"pdf" | "print" | null>(null);
   const consignmentsQuery = useQuery({
     queryKey: ["consignments", "settlement-options"],
     queryFn: () => consignmentsApi.list({ limit: 100 }),
@@ -2112,7 +2331,41 @@ export function SupplierSettlementReportPageClient({ consignmentId: initialConsi
       <PageHeader
         title="سپلائر حساب رپورٹ"
         description="مجموعی فروخت، کمیشن، خرچوں اور قابل ادائیگی رقم کو واضح طور پر دیکھیں۔"
-        action={<PrintButton />}
+        action={
+          <div className="flex gap-2 print:hidden">
+            <PdfDownloadButton
+              loading={exporting === "pdf"}
+              onClick={async () => {
+                if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                try {
+                  setExporting("pdf");
+                  const blob = await createSupplierSettlementPdf(query.data);
+                  downloadPdfBlob(blob, `supplier-account-${consignmentId || "report"}.pdf`);
+                  toast.success("پی ڈی ایف ڈاؤن لوڈ ہو گئی");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "پی ڈی ایف تیار نہیں ہو سکی");
+                } finally {
+                  setExporting(null);
+                }
+              }}
+            />
+            <ReportPrintButton
+              loading={exporting === "print"}
+              onClick={async () => {
+                if (!query.data) return toast.error("پہلے رپورٹ مکمل لوڈ ہونے دیں");
+                try {
+                  setExporting("print");
+                  const blob = await createSupplierSettlementPdf(query.data);
+                  openPdfBlob(blob);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "پرنٹ فائل تیار نہیں ہو سکی");
+                } finally {
+                  setExporting(null);
+                }
+              }}
+            />
+          </div>
+        }
       />
 
       <SectionCard title="گاڑی منتخب کریں" description="اسی گاڑی کے لئے حساب نکالا جائے گا">

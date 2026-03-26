@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   CircleDollarSign,
+  ChevronLeft,
+  Download,
   Loader2,
   LogOut,
   Menu,
@@ -52,6 +54,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { authApi, tenantApi } from "@/lib/mandi/api";
 import { appName, sidebarLinks } from "@/lib/mandi/constants";
 import { sessionStore } from "@/lib/mandi/session";
@@ -63,6 +66,7 @@ export function useSession() {
   const [user, setUser] = useState<SessionUser | null>(() =>
     typeof window !== "undefined" ? sessionStore.getUser() : null,
   );
+  
 
   useEffect(() => {
     setUser(sessionStore.getUser());
@@ -78,8 +82,8 @@ export function useTenant() {
     staleTime: 60_000,
   });
 }
-
 export function AuthGuard({ children }: { children: React.ReactNode }) {
+
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const token = typeof window !== "undefined" ? sessionStore.getToken() : null;
@@ -128,6 +132,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const user = useSession();
   const tenantQuery = useTenant();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("mandi-sidebar-collapsed");
+    setCollapsed(saved === "true");
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("mandi-sidebar-collapsed", String(collapsed));
+  }, [collapsed]);
 
   const visibleLinks = sidebarLinks.filter((item) =>
     item.roles.includes((user?.role ?? "OPERATOR") as UserRole),
@@ -139,6 +153,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       sidebarLinks.find((link) => pathname === link.href || pathname.startsWith(`${link.href}/`));
     return current?.title ?? "منڈی اسمارٹ";
   }, [pathname, visibleLinks]);
+
+  const breadcrumbs = useMemo(() => {
+    const segmentLabels: Record<string, string> = {
+      dashboard: "ڈیش بورڈ",
+      customers: "گاہک",
+      suppliers: "سپلائر",
+      consignments: "مال / گاڑی",
+      sales: "فروخت",
+      payments: "وصولی",
+      expenses: "خرچے",
+      reports: "رپورٹس",
+      users: "آپریٹرز",
+      settings: "سیٹنگز",
+      "daily-sales": "روزانہ فروخت",
+      "customer-ledger": "گاہک کھاتہ",
+      "consignment-summary": "مال کا خلاصہ",
+      "supplier-settlement": "سپلائر حساب",
+    };
+
+    const segments = pathname.split("/").filter(Boolean);
+    if (!segments.length) {
+      return [{ href: "/dashboard", label: "ڈیش بورڈ", current: true }];
+    }
+
+    return segments.map((segment, index) => {
+      const href = `/${segments.slice(0, index + 1).join("/")}`;
+      const previous = segments[index - 1];
+      const isIdSegment =
+        index > 0 &&
+        ["customers", "suppliers", "consignments"].includes(previous) &&
+        !segmentLabels[segment];
+
+      return {
+        href,
+        label: isIdSegment ? "تفصیل" : segmentLabels[segment] ?? segment,
+        current: index === segments.length - 1,
+      };
+    });
+  }, [pathname]);
 
   const sidebarIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
     "/dashboard": LayoutDashboard,
@@ -180,6 +233,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
+  const desktopSidebarWidth = collapsed ? "lg:w-[6.5rem]" : "lg:w-[21rem]";
+  const desktopContentPadding = collapsed ? "lg:pr-[6.5rem]" : "lg:pr-[21rem]";
+
   return (
     <div className="min-h-screen bg-[var(--surface-soft)] text-foreground dark:bg-[linear-gradient(180deg,#09131f_0%,#0d1724_100%)]">
       {mobileOpen ? (
@@ -192,121 +248,182 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex h-screen w-[22rem] flex-col overflow-hidden border-l border-white/50 bg-[linear-gradient(180deg,rgba(9,61,47,0.98),rgba(15,23,42,0.98))] px-4 py-5 shadow-[0_30px_80px_-35px_rgba(2,8,23,0.8)] transition-transform duration-300 lg:translate-x-0",
+          "fixed inset-y-0 right-0 z-50 flex h-screen w-[22rem] flex-col overflow-hidden border-l border-white/50 bg-[linear-gradient(180deg,rgba(9,61,47,0.98),rgba(15,23,42,0.98))] py-5 shadow-[0_30px_80px_-35px_rgba(2,8,23,0.8)] transition-all duration-300 lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "translate-x-full",
-          "lg:w-[21rem]",
+          collapsed ? "px-3" : "px-4",
+          desktopSidebarWidth,
         )}
       >
-        <div className="rounded-[2rem] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.05))] p-4 text-white shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)] backdrop-blur-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-heading text-[1.9rem] leading-none">{appName}</p>
-              <p className="mt-2 text-sm text-white/75">
-                {tenantQuery.data?.name ?? "منڈی کا حساب"}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-white/10 lg:hidden"
-              onClick={() => setMobileOpen(false)}
-            >
-              <MoveLeft className="size-4" />
-            </Button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5">
-              <p className="text-xs text-white/60">رول</p>
-              <p className="mt-1 text-base font-semibold text-white">
-                {user?.role === "OWNER" ? "مالک" : "مشی"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5">
-              <p className="text-xs text-white/60">شناخت</p>
-              <p className="mt-1 truncate text-base font-semibold text-white">
-                {tenantQuery.data?.slug ?? "..."}
-              </p>
+        {collapsed ? (
+          <div className="rounded-[2rem] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.05))] p-3 text-white shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+            <div className="flex items-center justify-between lg:justify-center">
+              <span className="flex size-12 items-center justify-center rounded-2xl border border-white/12 bg-white/10 font-heading text-3xl">
+                م
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-white hover:bg-white/10 lg:hidden"
+                onClick={() => setMobileOpen(false)}
+              >
+                <MoveLeft className="size-4" />
+              </Button>
             </div>
           </div>
-        </div>
-
-        <ScrollArea className="mt-6 min-h-0 flex-1">
-          <div className="space-y-6 pl-1">
-            {sidebarGroups.map((group) => (
-              <div key={group.title}>
-                <p className="mb-2 px-2 text-xs font-semibold tracking-wide text-white/50">
-                  {group.title}
+        ) : (
+          <div className="rounded-[2rem] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.05))] p-4 text-white shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-heading text-[1.9rem] leading-none">{appName}</p>
+                <p className="mt-2 text-sm text-white/75">
+                  {tenantQuery.data?.name ?? "منڈی کا حساب"}
                 </p>
-                <nav className="space-y-1.5">
-                  {group.items.map((item) => {
-                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                    const Icon = sidebarIconMap[item.href];
-
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={cn(
-                          "group flex items-center justify-between rounded-[1.35rem] border px-3 py-3 transition duration-200",
-                          active
-                            ? "border-white/70 bg-[linear-gradient(135deg,#fffefb,#f5ead6)] text-[var(--brand-forest)] shadow-[0_16px_35px_-25px_rgba(15,23,42,0.8)]"
-                            : "border-transparent bg-white/[0.04] text-white/82 hover:border-white/10 hover:bg-white/[0.09] hover:text-white",
-                        )}
-                        onClick={() => setMobileOpen(false)}
-                      >
-                        <span className="flex min-w-0 items-center gap-3">
-                          <span
-                            className={cn(
-                              "flex size-11 shrink-0 items-center justify-center rounded-2xl border transition",
-                              active
-                                ? "border-[var(--brand-sand)]/60 bg-[var(--surface-warm)] text-[var(--brand-forest)]"
-                                : "border-white/10 bg-white/6 text-white/78 group-hover:bg-white/10 group-hover:text-white",
-                            )}
-                          >
-                            {Icon ? <Icon className="size-5" /> : null}
-                          </span>
-                          <span className="min-w-0">
-                            <span className={cn("block truncate text-[1.24rem] leading-7", active ? "font-heading" : "font-medium")}>
-                              {item.title}
-                            </span>
-                            <span className={cn("block text-xs", active ? "text-[var(--brand-forest)]/70" : "text-white/45")}>
-                              {active ? "یہ صفحہ کھلا ہوا ہے" : "کھولنے کے لئے دبائیں"}
-                            </span>
-                          </span>
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </nav>
               </div>
-            ))}
-          </div>
-        </ScrollArea>
-
-        <div className="mt-4 shrink-0 rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] p-3">
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-white/6 px-3 py-2.5 text-white">
-            <div className="min-w-0">
-              <p className="truncate text-sm text-white/60">کام کرنے والا</p>
-              <p className="truncate text-base font-semibold text-white">{user?.name ?? "..."}</p>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-white hover:bg-white/10 lg:hidden"
+                onClick={() => setMobileOpen(false)}
+              >
+                <MoveLeft className="size-4" />
+              </Button>
             </div>
-            <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs text-white/75">
-              {user?.role === "OWNER" ? "مالک" : "مشی"}
-            </span>
-          </div>
 
-          <button
-            type="button"
-            onClick={logout}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm text-white transition hover:bg-white/12"
-          >
-            <LogOut className="size-4" />
-            لاگ آؤٹ
-          </button>
-        </div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5">
+                <p className="text-xs text-white/60">رول</p>
+                <p className="mt-1 text-base font-semibold text-white">
+                  {user?.role === "OWNER" ? "مالک" : "مشی"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5">
+                <p className="text-xs text-white/60">شناخت</p>
+                <p className="mt-1 truncate text-base font-semibold text-white">
+                  {tenantQuery.data?.slug ?? "..."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <TooltipProvider>
+          <ScrollArea className="mt-6 min-h-0 flex-1">
+            <div className={cn("pl-1", collapsed ? "space-y-3" : "space-y-6")}>
+              {sidebarGroups.map((group) => (
+                <div key={group.title}>
+                  {!collapsed ? (
+                    <p className="mb-2 px-2 text-xs font-semibold tracking-wide text-white/50">
+                      {group.title}
+                    </p>
+                  ) : null}
+                  <nav className="space-y-1.5">
+                    {group.items.map((item) => {
+                      const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                      const Icon = sidebarIconMap[item.href];
+
+                      const linkNode = (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={cn(
+                            "group flex rounded-[1.35rem] border transition duration-200",
+                            collapsed ? "items-center justify-center px-2 py-3" : "items-center justify-between px-3 py-3",
+                            active
+                              ? "border-white/70 bg-[linear-gradient(135deg,#fffefb,#f5ead6)] text-[var(--brand-forest)] shadow-[0_16px_35px_-25px_rgba(15,23,42,0.8)]"
+                              : "border-transparent bg-white/[0.04] text-white/82 hover:border-white/10 hover:bg-white/[0.09] hover:text-white",
+                          )}
+                          onClick={() => setMobileOpen(false)}
+                        >
+                          <span className={cn("flex min-w-0 items-center", collapsed ? "justify-center" : "gap-3")}>
+                            <span
+                              className={cn(
+                                "flex shrink-0 items-center justify-center rounded-2xl border transition",
+                                collapsed ? "size-12" : "size-11",
+                                active
+                                  ? "border-[var(--brand-sand)]/60 bg-[var(--surface-warm)] text-[var(--brand-forest)]"
+                                  : "border-white/10 bg-white/6 text-white/78 group-hover:bg-white/10 group-hover:text-white",
+                              )}
+                            >
+                              {Icon ? <Icon className={cn(collapsed ? "size-6" : "size-5")} /> : null}
+                            </span>
+                            {!collapsed ? (
+                              <span className="min-w-0">
+                                <span className={cn("block truncate text-[1.24rem] leading-7", active ? "font-heading" : "font-medium")}>
+                                  {item.title}
+                                </span>
+                                <span className={cn("block text-xs", active ? "text-[var(--brand-forest)]/70" : "text-white/45")}>
+                                  {active ? "یہ صفحہ کھلا ہوا ہے" : "کھولنے کے لئے دبائیں"}
+                                </span>
+                              </span>
+                            ) : null}
+                          </span>
+                        </Link>
+                      );
+
+                      return collapsed ? (
+                        <Tooltip key={item.href}>
+                          <TooltipTrigger asChild>{linkNode}</TooltipTrigger>
+                          <TooltipContent side="left" sideOffset={10}>
+                            {item.title}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        linkNode
+                      );
+                    })}
+                  </nav>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+
+          <div className="mt-4 shrink-0 rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] p-3">
+          {!collapsed ? (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-white/6 px-3 py-2.5 text-white">
+              <div className="min-w-0">
+                <p className="truncate text-sm text-white/60">کام کرنے والا</p>
+                <p className="truncate text-base font-semibold text-white">{user?.name ?? "..."}</p>
+              </div>
+              <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs text-white/75">
+                {user?.role === "OWNER" ? "مالک" : "مشی"}
+              </span>
+            </div>
+          ) : (
+            <div className="mb-3 flex justify-center rounded-2xl bg-white/6 px-2 py-3 text-white">
+              <span className="flex size-11 items-center justify-center rounded-full border border-white/12 bg-white/10 text-lg font-semibold">
+                {(user?.name ?? "؟").slice(0, 1)}
+              </span>
+            </div>
+          )}
+
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm text-white transition hover:bg-white/12"
+                >
+                  <LogOut className="size-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={10}>لاگ آؤٹ</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              onClick={logout}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm text-white transition hover:bg-white/12"
+            >
+              <LogOut className="size-4" />
+              لاگ آؤٹ
+            </button>
+          )}
+          </div>
+        </TooltipProvider>
       </aside>
 
-      <div className="lg:pr-[21rem]">
+      <div className={desktopContentPadding}>
         <header className="sticky top-0 z-30 border-b border-white/70 bg-white/85 backdrop-blur dark:border-white/10 dark:bg-slate-950/80">
           <div className="mx-auto flex max-w-[1700px] items-center justify-between gap-3 px-4 py-4 lg:px-8">
             <div className="flex items-center gap-3">
@@ -318,11 +435,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Menu className="size-4" />
               </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="hidden lg:inline-flex"
+                onClick={() => setCollapsed((value) => !value)}
+              >
+                <Menu className="size-4" />
+              </Button>
               <div>
-                <p className="font-heading text-2xl text-slate-900 dark:text-white">{pageTitle}</p>
+                <p className="font-heading text-3xl text-slate-900 dark:text-white">{pageTitle}</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   {tenantQuery.data?.name ?? "کھل رہا ہے"}
                 </p>
+                {breadcrumbs.length > 1 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                    {breadcrumbs.map((crumb, index) => (
+                      <div key={crumb.href} className="flex items-center gap-2">
+                        {index > 0 ? <ChevronLeft className="size-4" /> : null}
+                        {crumb.current ? (
+                          <span className="font-medium text-slate-700 dark:text-slate-200">{crumb.label}</span>
+                        ) : (
+                          <Link href={crumb.href} className="transition hover:text-slate-900 dark:hover:text-white">
+                            {crumb.label}
+                          </Link>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -421,10 +562,10 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-[2rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,250,241,0.92))] p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))] lg:flex-row lg:items-center lg:justify-between lg:p-7">
+    <div className="flex flex-col gap-4 rounded-[1.75rem] border border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(251,246,238,0.94))] p-6 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))] lg:flex-row lg:items-center lg:justify-between lg:p-8">
       <div className="space-y-2">
-        <h1 className="font-heading text-3xl text-slate-950 dark:text-white lg:text-4xl">{title}</h1>
-        {description ? <p className="max-w-3xl text-sm leading-7 text-slate-600 dark:text-slate-300">{description}</p> : null}
+        <h1 className="font-heading text-4xl text-slate-950 dark:text-white lg:text-5xl">{title}</h1>
+        {description ? <p className="max-w-3xl text-base leading-8 text-slate-600 dark:text-slate-300">{description}</p> : null}
       </div>
       {action ? <div className="flex flex-wrap items-center gap-3">{action}</div> : null}
     </div>
@@ -437,25 +578,36 @@ export function SummaryCards({
   items: Array<{ title: string; value: string; help?: string; tone?: "warm" | "success" | "danger" | "default" }>;
 }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
         <Card
           key={item.title}
           className={cn(
-            "overflow-hidden border-0 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.55)]",
-            item.tone === "warm" && "bg-[linear-gradient(135deg,#fff8ec,#fff1d8)] dark:bg-[linear-gradient(135deg,rgba(96,66,22,0.4),rgba(49,34,12,0.55))]",
-            item.tone === "success" && "bg-[linear-gradient(135deg,#eefcf6,#ddf6eb)] dark:bg-[linear-gradient(135deg,rgba(8,80,54,0.55),rgba(8,48,35,0.62))]",
-            item.tone === "danger" && "bg-[linear-gradient(135deg,#fff4f2,#ffe4df)] dark:bg-[linear-gradient(135deg,rgba(108,32,32,0.52),rgba(58,20,20,0.65))]",
-            (!item.tone || item.tone === "default") && "bg-white dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.86),rgba(2,6,23,0.86))]",
-            "dark:border dark:border-white/10",
+            "overflow-hidden border shadow-[0_14px_28px_-24px_rgba(15,23,42,0.25)]",
+            item.tone === "warm" && "border-[#e7d09a] bg-[linear-gradient(180deg,#fffdf8,#fff8e8)] dark:bg-[linear-gradient(135deg,rgba(96,66,22,0.4),rgba(49,34,12,0.55))]",
+            item.tone === "success" && "border-[#bcd6c3] bg-[linear-gradient(180deg,#f5fbf5,#edf7ee)] dark:bg-[linear-gradient(135deg,rgba(8,80,54,0.55),rgba(8,48,35,0.62))]",
+            item.tone === "danger" && "border-[#edb9b9] bg-[linear-gradient(180deg,#fff8f8,#fff0ef)] dark:bg-[linear-gradient(135deg,rgba(108,32,32,0.52),rgba(58,20,20,0.65))]",
+            (!item.tone || item.tone === "default") && "border-[var(--brand-line)] bg-[linear-gradient(180deg,#ffffff,#fdfaf5)] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.86),rgba(2,6,23,0.86))]",
+            "dark:border-white/10",
           )}
         >
-          <CardHeader className="gap-3">
-            <CardDescription className="dark:text-slate-300">{item.title}</CardDescription>
-            <CardTitle className="font-heading text-3xl dark:text-white">{item.value}</CardTitle>
+          <CardHeader className="gap-3 p-6">
+            <CardDescription className="text-[1.05rem] text-slate-700 dark:text-slate-300">{item.title}</CardDescription>
+            <CardTitle className={cn(
+              "font-heading text-4xl dark:text-white",
+              item.tone === "success" && "text-[var(--brand-forest)]",
+              item.tone === "warm" && "text-[#c6951f]",
+              item.tone === "danger" && "text-[#d23c3c]",
+            )}>{item.value}</CardTitle>
           </CardHeader>
           {item.help ? (
-            <CardContent className="pt-0 text-sm text-slate-600 dark:text-slate-300">{item.help}</CardContent>
+            <CardContent className={cn(
+              "pt-0 text-base dark:text-slate-300",
+              item.tone === "success" && "text-[var(--brand-forest)]/80",
+              item.tone === "warm" && "text-[#9f7a22]",
+              item.tone === "danger" && "text-[#b35050]",
+              (!item.tone || item.tone === "default") && "text-slate-600",
+            )}>{item.help}</CardContent>
           ) : null}
         </Card>
       ))}
@@ -475,15 +627,15 @@ export function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,246,238,0.95))] shadow-[0_20px_60px_-42px_rgba(15,23,42,0.4)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))]">
-      <CardHeader className="flex flex-col gap-3 border-b border-[var(--brand-line)] dark:border-white/10 lg:flex-row lg:items-center lg:justify-between">
+    <Card className="border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,246,238,0.95))] shadow-[0_18px_36px_-30px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))]">
+      <CardHeader className="flex flex-col gap-3 border-b border-[var(--brand-line)] p-6 dark:border-white/10 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-1">
-          <CardTitle className="font-heading text-2xl dark:text-white">{title}</CardTitle>
-          {description ? <CardDescription className="dark:text-slate-300">{description}</CardDescription> : null}
+          <CardTitle className="font-heading text-3xl dark:text-white">{title}</CardTitle>
+          {description ? <CardDescription className="text-base dark:text-slate-300">{description}</CardDescription> : null}
         </div>
         {action}
       </CardHeader>
-      <CardContent className="pt-6">{children}</CardContent>
+      <CardContent className="pt-7">{children}</CardContent>
     </Card>
   );
 }
@@ -709,16 +861,53 @@ export function MetaStat({
 }) {
   return (
     <div className="rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] px-4 py-3 dark:border-white/10 dark:bg-slate-900/60">
-      <p className="text-sm text-slate-500 dark:text-slate-300">{title}</p>
-      <p className="mt-1 font-heading text-2xl text-slate-950 dark:text-white">{value}</p>
+      <p className="text-base text-slate-500 dark:text-slate-300">{title}</p>
+      <p className="mt-1 font-heading text-3xl text-slate-950 dark:text-white">{value}</p>
     </div>
   );
 }
 
 export function PrintButton() {
   return (
-    <Button variant="outline" onClick={() => window.print()}>
+    <Button variant="outline" className="print:hidden" onClick={() => window.print()}>
       <Printer className="size-4" />
+      پرنٹ
+    </Button>
+  );
+}
+
+export function PdfDownloadButton({
+  onClick,
+  loading = false,
+  label = "پی ڈی ایف",
+}: {
+  onClick: () => void;
+  loading?: boolean;
+  label?: string;
+}) {
+  return (
+    <Button
+      variant="outline"
+      className="print:hidden"
+      onClick={onClick}
+      disabled={loading}
+    >
+      {loading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+      {label}
+    </Button>
+  );
+}
+
+export function ReportPrintButton({
+  onClick,
+  loading = false,
+}: {
+  onClick: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <Button variant="outline" className="print:hidden" onClick={onClick} disabled={loading}>
+      {loading ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />}
       پرنٹ
     </Button>
   );
