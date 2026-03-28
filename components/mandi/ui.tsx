@@ -29,7 +29,7 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useQuery } from "@tanstack/react-query";
+import { useIsFetching, useIsMutating, useQuery } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
@@ -81,6 +81,109 @@ export function useTenant() {
     queryFn: tenantApi.me,
     staleTime: 60_000,
   });
+}
+
+function CenterLoader({
+  title = "انتظار کریں",
+  subtitle,
+  overlay = false,
+  compact = false,
+}: {
+  title?: string;
+  subtitle?: string;
+  overlay?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center",
+        overlay
+          ? "fixed inset-0 z-[90] bg-[radial-gradient(circle_at_center,rgba(252,250,244,0.72),rgba(252,250,244,0.52))] backdrop-blur-[2px] dark:bg-[radial-gradient(circle_at_center,rgba(8,17,27,0.72),rgba(8,17,27,0.52))]"
+          : "min-h-[260px] rounded-[1.75rem] border border-white/70 bg-white/70 dark:border-white/10 dark:bg-slate-950/60",
+      )}
+    >
+      <div
+        className={cn(
+          "inline-flex items-center gap-3 text-center",
+          compact
+            ? "rounded-full border border-[var(--brand-line)] bg-white/95 px-5 py-3 shadow-[0_14px_35px_-24px_rgba(15,23,42,0.32)] dark:border-white/10 dark:bg-slate-950/92"
+            : "rounded-full border border-[var(--brand-line)] bg-white/96 px-6 py-3.5 shadow-[0_16px_40px_-26px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-slate-950/92",
+        )}
+      >
+        <div className="relative flex size-5 items-center justify-center">
+          <Loader2 className="relative z-10 size-4 animate-spin text-[var(--brand-forest)] dark:text-emerald-300" />
+        </div>
+        <div className="flex flex-col items-start text-right">
+          <p className="font-heading text-[1.6rem] leading-none text-slate-900 dark:text-white">{title}</p>
+          {subtitle ? (
+            <p className="mt-1 text-[0.92rem] text-slate-600 dark:text-slate-300">{subtitle}</p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function GlobalApiLoader() {
+  const isFetching = useIsFetching();
+  const isMutating = useIsMutating();
+  const [manualRequests, setManualRequests] = useState(0);
+  const busy = isFetching + isMutating + manualRequests > 0;
+  const [visible, setVisible] = useState(false);
+  const [holdVisible, setHoldVisible] = useState(false);
+
+  useEffect(() => {
+    const onLoaderEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ type?: "start" | "end" }>).detail;
+      if (detail?.type === "start") {
+        setManualRequests((count) => count + 1);
+        return;
+      }
+
+      if (detail?.type === "end") {
+        setManualRequests((count) => Math.max(0, count - 1));
+      }
+    };
+
+    window.addEventListener("mandi:api-loader", onLoaderEvent as EventListener);
+    return () => window.removeEventListener("mandi:api-loader", onLoaderEvent as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (!busy) {
+      if (!visible) {
+        setHoldVisible(false);
+        return;
+      }
+
+      setHoldVisible(true);
+      const hideTimer = window.setTimeout(() => {
+        setVisible(false);
+        setHoldVisible(false);
+      }, 500);
+
+      return () => window.clearTimeout(hideTimer);
+    }
+
+    if (visible) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setVisible(true), 220);
+    return () => window.clearTimeout(timer);
+  }, [busy, visible]);
+
+  if (!visible && !holdVisible) return null;
+
+  return (
+    <CenterLoader
+      title={isMutating + manualRequests > 0 ? "انتظار کریں" : "انتظار کریں"}
+      subtitle={isMutating + manualRequests > 0 ? "درخواست پر کام ہو رہا ہے" : "API response کا انتظار ہے"}
+      overlay
+      compact
+    />
+  );
 }
 export function AuthGuard({ children }: { children: React.ReactNode }) {
 
@@ -233,8 +336,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
-  const desktopSidebarWidth = collapsed ? "lg:w-[6.5rem]" : "lg:w-[21rem]";
-  const desktopContentPadding = collapsed ? "lg:pr-[6.5rem]" : "lg:pr-[21rem]";
+  const desktopSidebarWidth = collapsed ? "lg:w-[5.4rem]" : "lg:w-[15.5rem]";
+  const desktopContentPadding = collapsed ? "lg:pr-[5.4rem]" : "lg:pr-[15.5rem]";
 
   return (
     <div className="min-h-screen bg-[var(--surface-soft)] text-foreground dark:bg-[linear-gradient(180deg,#09131f_0%,#0d1724_100%)]">
@@ -248,18 +351,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex h-screen w-[22rem] flex-col overflow-hidden border-l border-white/50 bg-[linear-gradient(180deg,rgba(9,61,47,0.98),rgba(15,23,42,0.98))] py-5 shadow-[0_30px_80px_-35px_rgba(2,8,23,0.8)] transition-all duration-300 lg:translate-x-0",
+          "fixed inset-y-0 right-0 z-50 flex h-screen w-[16rem] flex-col overflow-hidden border-l border-white/8 bg-[#2f6f45] py-3 shadow-[0_24px_60px_-32px_rgba(2,8,23,0.72)] transition-all duration-300 lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "translate-x-full",
-          collapsed ? "px-3" : "px-4",
+          collapsed ? "px-2.5" : "px-3",
           desktopSidebarWidth,
         )}
       >
         {collapsed ? (
-          <div className="rounded-[2rem] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.05))] p-3 text-white shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+          <div className="flex items-center justify-center rounded-[1.6rem] border border-white/10 bg-white/6 py-2 text-white">
             <div className="flex items-center justify-between lg:justify-center">
-              <span className="flex size-12 items-center justify-center rounded-2xl border border-white/12 bg-white/10 font-heading text-3xl">
-                م
-              </span>
+              <span className="flex size-10 items-center justify-center rounded-xl border border-white/12 bg-white/8 font-heading text-2xl">م</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -271,13 +372,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         ) : (
-          <div className="rounded-[2rem] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.05))] p-4 text-white shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)] backdrop-blur-sm">
-            <div className="flex items-center justify-between">
+          <div className="rounded-[1.7rem] border border-white/10 bg-white/6 p-3 text-white">
+            <div className="flex items-start justify-between">
               <div>
-                <p className="font-heading text-[1.9rem] leading-none">{appName}</p>
-                <p className="mt-2 text-sm text-white/75">
-                  {tenantQuery.data?.name ?? "منڈی کا حساب"}
-                </p>
+                <p className="font-heading text-[1.8rem] leading-none">{appName}</p>
+                <p className="mt-1 text-sm text-white/70">{tenantQuery.data?.name ?? "منڈی کا حساب"}</p>
               </div>
               <Button
                 variant="ghost"
@@ -288,109 +387,75 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <MoveLeft className="size-4" />
               </Button>
             </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5">
-                <p className="text-xs text-white/60">رول</p>
-                <p className="mt-1 text-base font-semibold text-white">
-                  {user?.role === "OWNER" ? "مالک" : "مشی"}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5">
-                <p className="text-xs text-white/60">شناخت</p>
-                <p className="mt-1 truncate text-base font-semibold text-white">
-                  {tenantQuery.data?.slug ?? "..."}
-                </p>
-              </div>
-            </div>
           </div>
         )}
 
         <TooltipProvider>
-          <ScrollArea className="mt-6 min-h-0 flex-1">
-            <div className={cn("pl-1", collapsed ? "space-y-3" : "space-y-6")}>
-              {sidebarGroups.map((group) => (
-                <div key={group.title}>
-                  {!collapsed ? (
-                    <p className="mb-2 px-2 text-xs font-semibold tracking-wide text-white/50">
-                      {group.title}
-                    </p>
-                  ) : null}
-                  <nav className="space-y-1.5">
-                    {group.items.map((item) => {
-                      const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                      const Icon = sidebarIconMap[item.href];
+          <ScrollArea className="mt-4 min-h-0 flex-1">
+            <nav className={cn("space-y-1.5", collapsed ? "px-0.5" : "px-0.5")}>
+              {visibleLinks.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const Icon = sidebarIconMap[item.href];
 
-                      const linkNode = (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          className={cn(
-                            "group flex rounded-[1.35rem] border transition duration-200",
-                            collapsed ? "items-center justify-center px-2 py-3" : "items-center justify-between px-3 py-3",
-                            active
-                              ? "border-white/70 bg-[linear-gradient(135deg,#fffefb,#f5ead6)] text-[var(--brand-forest)] shadow-[0_16px_35px_-25px_rgba(15,23,42,0.8)]"
-                              : "border-transparent bg-white/[0.04] text-white/82 hover:border-white/10 hover:bg-white/[0.09] hover:text-white",
-                          )}
-                          onClick={() => setMobileOpen(false)}
-                        >
-                          <span className={cn("flex min-w-0 items-center", collapsed ? "justify-center" : "gap-3")}>
-                            <span
-                              className={cn(
-                                "flex shrink-0 items-center justify-center rounded-2xl border transition",
-                                collapsed ? "size-12" : "size-11",
-                                active
-                                  ? "border-[var(--brand-sand)]/60 bg-[var(--surface-warm)] text-[var(--brand-forest)]"
-                                  : "border-white/10 bg-white/6 text-white/78 group-hover:bg-white/10 group-hover:text-white",
-                              )}
-                            >
-                              {Icon ? <Icon className={cn(collapsed ? "size-6" : "size-5")} /> : null}
-                            </span>
-                            {!collapsed ? (
-                              <span className="min-w-0">
-                                <span className={cn("block truncate text-[1.24rem] leading-7", active ? "font-heading" : "font-medium")}>
-                                  {item.title}
-                                </span>
-                                <span className={cn("block text-xs", active ? "text-[var(--brand-forest)]/70" : "text-white/45")}>
-                                  {active ? "یہ صفحہ کھلا ہوا ہے" : "کھولنے کے لئے دبائیں"}
-                                </span>
-                              </span>
-                            ) : null}
-                          </span>
-                        </Link>
-                      );
+                const linkNode = (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "group flex items-center rounded-[1.05rem] transition-all duration-200",
+                      collapsed ? "justify-center px-0 py-2.5" : "justify-between px-3 py-2.5",
+                      active
+                        ? "bg-[#3f874d] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        : "text-white/92 hover:bg-white/7 hover:text-white",
+                    )}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <span className={cn("flex min-w-0 items-center", collapsed ? "justify-center" : "gap-3")}>
+                      <span
+                        className={cn(
+                          "flex shrink-0 items-center justify-center rounded-xl transition",
+                          collapsed ? "size-10" : "size-9",
+                          active ? "bg-white/8 text-white" : "text-white/88 group-hover:text-white",
+                        )}
+                      >
+                        {Icon ? <Icon className={cn(collapsed ? "size-5" : "size-4.5")} /> : null}
+                      </span>
+                      {!collapsed ? (
+                        <span className={cn("truncate text-[1.26rem] leading-8", active ? "font-heading" : "font-medium")}>
+                          {item.title}
+                        </span>
+                      ) : null}
+                    </span>
+                    {!collapsed && active ? <ChevronLeft className="size-4 text-white/90" /> : null}
+                  </Link>
+                );
 
-                      return collapsed ? (
-                        <Tooltip key={item.href}>
-                          <TooltipTrigger asChild>{linkNode}</TooltipTrigger>
-                          <TooltipContent side="left" sideOffset={10}>
-                            {item.title}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        linkNode
-                      );
-                    })}
-                  </nav>
-                </div>
-              ))}
-            </div>
+                return collapsed ? (
+                  <Tooltip key={item.href}>
+                    <TooltipTrigger asChild>{linkNode}</TooltipTrigger>
+                    <TooltipContent side="left" sideOffset={10}>{item.title}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  linkNode
+                );
+              })}
+            </nav>
           </ScrollArea>
 
-          <div className="mt-4 shrink-0 rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] p-3">
+          <div className="mt-3 shrink-0 rounded-[1.25rem] border border-white/10 bg-white/6 p-2.5">
           {!collapsed ? (
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-white/6 px-3 py-2.5 text-white">
+            <div className="mb-2.5 flex items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 text-white">
               <div className="min-w-0">
-                <p className="truncate text-sm text-white/60">کام کرنے والا</p>
-                <p className="truncate text-base font-semibold text-white">{user?.name ?? "..."}</p>
+                <p className="truncate text-xs text-white/60">کام کرنے والا</p>
+                <p className="truncate text-sm font-semibold text-white">{user?.name ?? "..."}</p>
               </div>
-              <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs text-white/75">
+              <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] text-white/75">
                 {user?.role === "OWNER" ? "مالک" : "مشی"}
               </span>
             </div>
           ) : (
-            <div className="mb-3 flex justify-center rounded-2xl bg-white/6 px-2 py-3 text-white">
-              <span className="flex size-11 items-center justify-center rounded-full border border-white/12 bg-white/10 text-lg font-semibold">
+            <div className="mb-2.5 flex justify-center rounded-xl bg-white/6 px-2 py-2.5 text-white">
+              <span className="flex size-9 items-center justify-center rounded-full border border-white/12 bg-white/10 text-base font-semibold">
                 {(user?.name ?? "؟").slice(0, 1)}
               </span>
             </div>
@@ -402,7 +467,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={logout}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm text-white transition hover:bg-white/12"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2.5 text-sm text-white transition hover:bg-white/12"
                 >
                   <LogOut className="size-5" />
                 </button>
@@ -413,7 +478,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={logout}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm text-white transition hover:bg-white/12"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2.5 text-sm text-white transition hover:bg-white/12"
             >
               <LogOut className="size-4" />
               لاگ آؤٹ
@@ -444,12 +509,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Menu className="size-4" />
               </Button>
               <div>
-                <p className="font-heading text-3xl text-slate-900 dark:text-white">{pageTitle}</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="font-heading text-[2.2rem] text-slate-900 dark:text-white">{pageTitle}</p>
+                <p className="text-base text-slate-500 dark:text-slate-400">
                   {tenantQuery.data?.name ?? "کھل رہا ہے"}
                 </p>
                 {breadcrumbs.length > 1 ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-base text-slate-500 dark:text-slate-400">
                     {breadcrumbs.map((crumb, index) => (
                       <div key={crumb.href} className="flex items-center gap-2">
                         {index > 0 ? <ChevronLeft className="size-4" /> : null}
@@ -470,7 +535,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-3">
               <ThemeToggle />
               <div className="rounded-3xl border border-[var(--brand-sand)] bg-[linear-gradient(180deg,#fffaf1,#f8efde)] px-4 py-2 text-right shadow-sm dark:border-white/12 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(255,255,255,0.05))]">
-                <p className="text-sm text-slate-500 dark:text-slate-400">{user?.role === "OWNER" ? "مالک" : "مشی"}</p>
+                <p className="text-base text-slate-500 dark:text-slate-400">{user?.role === "OWNER" ? "مالک" : "مشی"}</p>
                 <p className="font-semibold text-slate-900 dark:text-white">{user?.name ?? "..."}</p>
               </div>
             </div>
@@ -562,10 +627,10 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-[1.75rem] border border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(251,246,238,0.94))] p-6 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))] lg:flex-row lg:items-center lg:justify-between lg:p-8">
+    <div className="flex flex-col gap-4 rounded-[1.75rem] border border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(251,246,238,0.94))] p-6 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))] lg:flex-row lg:items-center lg:justify-between lg:p-7">
       <div className="space-y-2">
-        <h1 className="font-heading text-4xl text-slate-950 dark:text-white lg:text-5xl">{title}</h1>
-        {description ? <p className="max-w-3xl text-base leading-8 text-slate-600 dark:text-slate-300">{description}</p> : null}
+        <h1 className="font-heading text-[2.8rem] text-slate-950 dark:text-white lg:text-[3.4rem]">{title}</h1>
+        {description ? <p className="max-w-3xl text-[1.12rem] leading-9 text-slate-600 dark:text-slate-300">{description}</p> : null}
       </div>
       {action ? <div className="flex flex-wrap items-center gap-3">{action}</div> : null}
     </div>
@@ -578,7 +643,7 @@ export function SummaryCards({
   items: Array<{ title: string; value: string; help?: string; tone?: "warm" | "success" | "danger" | "default" }>;
 }) {
   return (
-    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
         <Card
           key={item.title}
@@ -591,10 +656,10 @@ export function SummaryCards({
             "dark:border-white/10",
           )}
         >
-          <CardHeader className="gap-3 p-6">
-            <CardDescription className="text-[1.05rem] text-slate-700 dark:text-slate-300">{item.title}</CardDescription>
+          <CardHeader className="gap-2 p-4 pb-3">
+            <CardDescription className="text-[1.12rem] text-slate-700 dark:text-slate-300">{item.title}</CardDescription>
             <CardTitle className={cn(
-              "font-heading text-4xl dark:text-white",
+              "font-heading text-[2.05rem] leading-tight dark:text-white lg:text-[2.2rem]",
               item.tone === "success" && "text-[var(--brand-forest)]",
               item.tone === "warm" && "text-[#c6951f]",
               item.tone === "danger" && "text-[#d23c3c]",
@@ -602,7 +667,7 @@ export function SummaryCards({
           </CardHeader>
           {item.help ? (
             <CardContent className={cn(
-              "pt-0 text-base dark:text-slate-300",
+              "px-4 pt-0 pb-4 text-[1.04rem] dark:text-slate-300",
               item.tone === "success" && "text-[var(--brand-forest)]/80",
               item.tone === "warm" && "text-[#9f7a22]",
               item.tone === "danger" && "text-[#b35050]",
@@ -630,8 +695,8 @@ export function SectionCard({
     <Card className="border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,246,238,0.95))] shadow-[0_18px_36px_-30px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))]">
       <CardHeader className="flex flex-col gap-3 border-b border-[var(--brand-line)] p-6 dark:border-white/10 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-1">
-          <CardTitle className="font-heading text-3xl dark:text-white">{title}</CardTitle>
-          {description ? <CardDescription className="text-base dark:text-slate-300">{description}</CardDescription> : null}
+          <CardTitle className="font-heading text-[2.25rem] dark:text-white">{title}</CardTitle>
+          {description ? <CardDescription className="text-[1.08rem] dark:text-slate-300">{description}</CardDescription> : null}
         </div>
         {action}
       </CardHeader>
@@ -657,7 +722,7 @@ export function StatusPill({
           : "border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200";
 
   return (
-    <Badge variant="outline" className={cn("rounded-full border px-3 py-1 text-xs", className)}>
+    <Badge variant="outline" className={cn("rounded-full border px-3 py-1 text-sm", className)}>
       {label}
     </Badge>
   );
@@ -704,8 +769,8 @@ export function EmptyState({
 }) {
   return (
     <div className="rounded-[1.75rem] border border-dashed border-[var(--brand-line)] bg-[var(--surface-soft)] px-6 py-10 text-center dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(2,6,23,0.68))]">
-      <p className="font-heading text-2xl text-slate-900 dark:text-white">{title}</p>
-      <p className="mx-auto mt-2 max-w-xl text-sm leading-7 text-slate-600 dark:text-slate-300">{description}</p>
+      <p className="font-heading text-[2.35rem] text-slate-900 dark:text-white">{title}</p>
+      <p className="mx-auto mt-2 max-w-xl text-[1.06rem] leading-8 text-slate-600 dark:text-slate-300">{description}</p>
       {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
     </div>
   );
@@ -722,8 +787,8 @@ export function ErrorState({
 }) {
   return (
     <div className="rounded-[1.75rem] border border-rose-200 bg-rose-50 px-6 py-6 dark:border-rose-500/30 dark:bg-rose-950/30">
-      <p className="font-heading text-2xl text-rose-900 dark:text-rose-200">{title}</p>
-      <p className="mt-2 text-sm text-rose-700 dark:text-rose-200/85">{error}</p>
+      <p className="font-heading text-[2.2rem] text-rose-900 dark:text-rose-200">{title}</p>
+      <p className="mt-2 text-[1.04rem] text-rose-700 dark:text-rose-200/85">{error}</p>
       {onRetry ? (
         <Button variant="outline" className="mt-4" onClick={onRetry}>
           <RefreshCcw className="size-4" />
@@ -735,14 +800,7 @@ export function ErrorState({
 }
 
 export function LoadingState({ title = "صفحہ کھل رہا ہے" }: { title?: string }) {
-  return (
-    <div className="flex min-h-[260px] items-center justify-center rounded-[1.75rem] border border-white/70 bg-white dark:border-white/10 dark:bg-slate-950/70">
-      <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
-        <Loader2 className="size-5 animate-spin" />
-        {title}
-      </div>
-    </div>
-  );
+  return <CenterLoader title={title} subtitle="API response aur page content تیار ہو رہا ہے" />;
 }
 
 export function ActionButton({
@@ -818,11 +876,11 @@ export function DataList<T>({
     <>
       <div className="hidden overflow-hidden rounded-[1.5rem] border border-[var(--brand-line)] bg-white/70 shadow-[0_18px_45px_-40px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/45 lg:block">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-sm">
+          <table className="w-full min-w-[780px] text-base">
             <thead className="bg-[var(--surface-soft)] text-slate-600 dark:bg-slate-900 dark:text-slate-300">
               <tr>
                 {columns.map((column) => (
-                  <th key={column.key} className={cn("px-4 py-3 text-right font-medium", column.className)}>
+                    <th key={column.key} className={cn("px-4 py-3.5 text-right font-medium", column.className)}>
                     {column.title}
                   </th>
                 ))}
@@ -832,7 +890,7 @@ export function DataList<T>({
               {data.map((item) => (
                 <tr key={getKey(item)} className="align-top hover:bg-[var(--surface-soft)]/60 dark:hover:bg-white/5">
                   {columns.map((column) => (
-                    <td key={column.key} className={cn("px-4 py-4", column.className)}>
+                    <td key={column.key} className={cn("px-4 py-4.5", column.className)}>
                       {column.render(item)}
                     </td>
                   ))}
@@ -861,8 +919,8 @@ export function MetaStat({
 }) {
   return (
     <div className="rounded-2xl border border-[var(--brand-line)] bg-[var(--surface-soft)] px-4 py-3 dark:border-white/10 dark:bg-slate-900/60">
-      <p className="text-base text-slate-500 dark:text-slate-300">{title}</p>
-      <p className="mt-1 font-heading text-3xl text-slate-950 dark:text-white">{value}</p>
+      <p className="text-[1.08rem] text-slate-500 dark:text-slate-300">{title}</p>
+      <p className="mt-1 font-heading text-[2.2rem] text-slate-950 dark:text-white">{value}</p>
     </div>
   );
 }

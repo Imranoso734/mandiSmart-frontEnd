@@ -79,8 +79,8 @@
 
 :root {
   --radius: 0.625rem;
-  --font-body: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif;
-  --font-heading: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif;
+  --font-body: "Noto Nastaliq Urdu", "Awami Nastaliq", "Urdu Typesetting", "Alvi Nastaleeq", "Mandi Jameel", serif;
+  --font-heading: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", "Awami Nastaliq", serif;
 
   --background: oklch(0.99 0.005 260);
   --foreground: oklch(0.18 0.01 260);
@@ -188,38 +188,20 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body), serif;
-    font-size: 19px;
-    line-height: 1.95;
+    font-size: 20.5px;
+    line-height: 2;
     letter-spacing: 0;
     background:
       radial-gradient(circle at top right, rgba(215, 188, 132, 0.14), transparent 24%),
       radial-gradient(circle at bottom left, rgba(85, 118, 84, 0.09), transparent 20%),
       linear-gradient(180deg, #fcfaf4 0%, #f6f1e7 100%);
     min-height: 100vh;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
 
-  body,
-  body :where(
-    h1,
-    h2,
-    h3,
-    h4,
-    h5,
-    h6,
-    p,
-    span,
-    label,
-    li,
-    a,
-    button,
-    input,
-    textarea,
-    select,
-    th,
-    td,
-    div
-  ) {
-    font-family: "Mandi Jameel", "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif !important;
+  body :where(p, span, label, li, a, button, input, textarea, select, th, td, div) {
+    font-family: var(--font-body), serif;
   }
 
   .dark body {
@@ -236,8 +218,8 @@
   h5,
   h6,
   .font-heading {
-    font-family: "Mandi Jameel", "Jameel Noori Nastaleeq", var(--font-heading), serif;
-    line-height: 1.8;
+    font-family: var(--font-heading), serif;
+    line-height: 1.72;
   }
 
   input,
@@ -245,7 +227,7 @@
   select,
   button {
     font-family: inherit;
-    font-size: 1rem;
+    font-size: 1.06rem;
     line-height: 1.9;
   }
 
@@ -255,7 +237,7 @@
   th,
   td,
   span {
-    line-height: 1.95;
+    line-height: 2;
   }
 
   input,

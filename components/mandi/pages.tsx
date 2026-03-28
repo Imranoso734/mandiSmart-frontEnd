@@ -144,6 +144,10 @@ function useCrudActions<T extends { id: string }>(
   return { saveMutation, deleteMutation };
 }
 
+function getCustomerOptionLabel(customer: Customer) {
+  return customer.phone ? `${customer.name} - ${customer.phone}` : customer.name;
+}
+
 export function LoginPageClient() {
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -1301,6 +1305,14 @@ export function ConsignmentDetailPageClient({ id }: { id: string }) {
 
   const consignment = detailQuery.data;
   const report = summaryQuery.data;
+  const reportSales = report.sales ?? [];
+  const reportExpenses = report.expenses ?? [];
+  const totalSales =
+    Number(report?.totalSales ?? 0) ||
+    reportSales.reduce((sum, sale) => sum + Number(sale.totalAmount ?? 0), 0);
+  const totalExpenses =
+    Number(report?.totalExpenses ?? 0) ||
+    reportExpenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -1325,8 +1337,8 @@ export function ConsignmentDetailPageClient({ id }: { id: string }) {
       <SummaryCards
         items={[
           { title: "حالت", value: consignmentStatusLabels[consignment.status], tone: consignment.status === "OPEN" ? "warm" : "success" },
-          { title: "مجموعی فروخت", value: formatCurrency(report?.totalSales ?? 0) },
-          { title: "کل خرچے", value: formatCurrency(report?.totalExpenses ?? 0), tone: "danger" },
+          { title: "مجموعی فروخت", value: formatCurrency(totalSales) },
+          { title: "کل خرچے", value: formatCurrency(totalExpenses), tone: "danger" },
           { title: "آئٹمز", value: formatNumber(consignment.items?.length ?? 0), tone: "default" },
         ]}
       />
@@ -1497,13 +1509,13 @@ export function SalesPageClient() {
               <SelectTrigger className="w-full min-w-48 bg-white dark:bg-slate-900/70 dark:border-white/10">
                 <SelectValue placeholder="گاہک فلٹر" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">تمام گاہک</SelectItem>
-                {customers.map((customer) => (
-                  <SelectItem key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </SelectItem>
-                ))}
+                <SelectContent>
+                  <SelectItem value="all">تمام گاہک</SelectItem>
+                  {customers.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {getCustomerOptionLabel(customer)}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           }
@@ -1646,7 +1658,7 @@ export function PaymentsPageClient() {
                   <SelectItem value="all">تمام گاہک</SelectItem>
                   {customers.map((customer) => (
                     <SelectItem key={customer.id} value={customer.id}>
-                      {customer.name}
+                      {getCustomerOptionLabel(customer)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2091,7 +2103,7 @@ export function CustomerLedgerReportPageClient({ customerId: initialCustomerId }
               <SelectItem value="none">گاہک منتخب کریں</SelectItem>
               {(customersQuery.data?.items ?? []).map((customer) => (
                 <SelectItem key={customer.id} value={customer.id}>
-                  {customer.name}
+                  {getCustomerOptionLabel(customer)}
                 </SelectItem>
               ))}
             </SelectContent>

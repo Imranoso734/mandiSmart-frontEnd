@@ -2,7 +2,7 @@
 
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import type {
   Supplier,
   User,
 } from "@/lib/mandi/types";
-import { formatCurrency, todayDate } from "@/lib/mandi/utils";
+import { calculateBalance, formatCurrency, getBalanceLabel, getBalanceTone, todayDate } from "@/lib/mandi/utils";
 
 type DialogBaseProps<T> = {
   open: boolean;
@@ -103,6 +103,16 @@ function toDateTimeValue(value?: string | null) {
 function asSelectValue(value?: string | number | null) {
   if (value === undefined || value === null || value === "") return "";
   return String(value);
+}
+
+function getCustomerOptionLabel(customer: Customer) {
+  return customer.phone ? `${customer.name} - ${customer.phone}` : customer.name;
+}
+
+function getConsignmentOptionLabel(consignment: Consignment) {
+  const vehicle = consignment.vehicleNumber || "بغیر نمبر";
+  const supplier = consignment.supplier?.name || "سپلائر";
+  return `${vehicle} - ${supplier}`;
 }
 
 export function CustomerDialog(props: DialogBaseProps<Customer>) {
@@ -368,6 +378,11 @@ export function ExpenseDialog({
       notes: props.initialValues?.notes ?? "",
     },
   });
+  const selectedConsignmentId = asSelectValue(form.watch("consignmentId"));
+  const availableConsignments = consignments.filter((consignment) => {
+    const id = asSelectValue(consignment.id);
+    return consignment.status === "OPEN" || id === selectedConsignmentId;
+  });
 
   return (
     <DialogShell
@@ -405,15 +420,18 @@ export function ExpenseDialog({
               control={form.control}
               name="consignmentId"
               render={({ field }) => (
-                <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                <Select
+                  value={asSelectValue(field.value) || "none"}
+                  onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="اختیاری" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">منسلک نہیں</SelectItem>
-                    {consignments.map((consignment) => (
-                      <SelectItem key={consignment.id} value={consignment.id}>
-                        {consignment.supplier?.name ?? "سپلائر"} - {consignment.vehicleNumber || "بغیر نمبر"}
+                    {availableConsignments.map((consignment) => (
+                      <SelectItem key={consignment.id} value={asSelectValue(consignment.id)}>
+                        {getConsignmentOptionLabel(consignment)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -473,6 +491,9 @@ export function PaymentDialog({
       notes: props.initialValues?.notes ?? "",
     },
   });
+  const selectedCustomerId = asSelectValue(form.watch("customerId"));
+  const selectedCustomer = customers.find((customer) => asSelectValue(customer.id) === selectedCustomerId);
+  const selectedCustomerBalance = selectedCustomer ? calculateBalance(selectedCustomer) : 0;
 
   return (
     <DialogShell
@@ -497,7 +518,7 @@ export function PaymentDialog({
                   <SelectContent>
                     {customers.map((customer) => (
                       <SelectItem key={customer.id} value={asSelectValue(customer.id)}>
-                        {customer.name}
+                        {getCustomerOptionLabel(customer)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -540,6 +561,20 @@ export function PaymentDialog({
             <Input {...form.register("reference")} placeholder="مثلاً بینک سلپ یا رسید نمبر" />
           </Field>
         </FieldGroup>
+        {selectedCustomer ? (
+          <div className={`rounded-[1.5rem] border px-5 py-4 ${getBalanceTone(selectedCustomerBalance)}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-heading text-2xl">{selectedCustomer.name}</p>
+                <p className="text-base">{selectedCustomer.phone || "فون موجود نہیں"}</p>
+              </div>
+              <div className="text-left">
+                <p className="text-base">{getBalanceLabel(selectedCustomerBalance)}</p>
+                <p className="font-heading text-3xl">{formatCurrency(Math.abs(selectedCustomerBalance))}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <Field>
           <FieldLabel>نوٹ</FieldLabel>
           <textarea
@@ -823,7 +858,10 @@ export function SaleDialog({
     control: form.control,
     name: "items",
   });
-  const watchedItems = form.watch("items");
+  const watchedItems = useWatch({
+    control: form.control,
+    name: "items",
+  }) ?? [];
   const selectedConsignmentIds = Array.from(
     new Set(
       watchedItems
@@ -900,14 +938,14 @@ export function SaleDialog({
               name="customerId"
               rules={{ required: "گاہک ضروری ہے" }}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select value={asSelectValue(field.value)} onValueChange={field.onChange}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="گاہک منتخب کریں" />
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.name}
+                      <SelectItem key={customer.id} value={asSelectValue(customer.id)}>
+                        {getCustomerOptionLabel(customer)}
                       </SelectItem>
                     ))}
                   </SelectContent>

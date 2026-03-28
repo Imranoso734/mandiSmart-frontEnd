@@ -2,6 +2,7 @@ import { sessionStore } from "@/lib/mandi/session";
 import {
   buildQuery,
   pickArray,
+  pickPaginationMeta,
   pickObject,
 } from "@/lib/mandi/utils";
 import type {
@@ -25,6 +26,12 @@ import type {
 } from "@/lib/mandi/types";
 
 const API_ROOT = `${(process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/$/, "")}/api/v1`;
+const GLOBAL_LOADER_EVENT = "mandi:api-loader";
+
+function emitGlobalLoader(type: "start" | "end") {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(GLOBAL_LOADER_EVENT, { detail: { type } }));
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -35,31 +42,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_ROOT}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  emitGlobalLoader("start");
 
-  const text = await response.text();
-  const data = text ? (JSON.parse(text) as unknown) : null;
+  try {
+    const response = await fetch(`${API_ROOT}${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
 
-  if (!response.ok) {
-    const message =
-      (data as { message?: string } | null)?.message ??
-      "درخواست مکمل نہیں ہو سکی";
+    const text = await response.text();
+    const data = text ? (JSON.parse(text) as unknown) : null;
 
-    if (response.status === 401 || response.status === 403) {
-      sessionStore.clear();
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
+    if (!response.ok) {
+      const message =
+        (data as { message?: string } | null)?.message ??
+        "درخواست مکمل نہیں ہو سکی";
+
+      if (response.status === 401 || response.status === 403) {
+        sessionStore.clear();
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
       }
+
+      throw new Error(message);
     }
 
-    throw new Error(message);
+    return data as T;
+  } finally {
+    emitGlobalLoader("end");
   }
-
-  return data as T;
 }
 
 function normalizeSession(data: unknown): AuthSession {
@@ -104,7 +117,8 @@ function normalizeSession(data: unknown): AuthSession {
 function normalizeList<T>(data: unknown, keys: string[]): ListResponse<T> {
   const root = (data ?? {}) as Record<string, unknown>;
   const items = pickArray<T>(root, keys);
-  const meta = pickObject<ListResponse<T>["meta"]>(root, ["meta", "pagination"]);
+  const meta =
+    pickObject<ListResponse<T>["meta"]>(root, ["meta", "pagination"]) ?? pickPaginationMeta(root);
   return { items, meta: meta ?? undefined };
 }
 
@@ -117,6 +131,10 @@ function normalizeDateTime(value?: string | null) {
 function normalizeConsignmentPayload(payload: Partial<Consignment>) {
   return {
     ...payload,
+    supplierId:
+      payload.supplierId === undefined || payload.supplierId === null || payload.supplierId === ""
+        ? payload.supplierId
+        : Number(payload.supplierId),
     arrivalDate: normalizeDateTime(payload.arrivalDate),
     commissionValue:
       payload.commissionValue === undefined || payload.commissionValue === null
@@ -139,9 +157,23 @@ function normalizeConsignmentPayload(payload: Partial<Consignment>) {
 function normalizeSalePayload(payload: Partial<Sale>) {
   return {
     ...payload,
+    customerId:
+      payload.customerId === undefined || payload.customerId === null || payload.customerId === ""
+        ? payload.customerId
+        : Number(payload.customerId),
     saleDate: normalizeDateTime(payload.saleDate),
     items: payload.items?.map((item) => ({
       ...item,
+      consignmentId:
+        item.consignmentId === undefined || item.consignmentId === null || item.consignmentId === ""
+          ? item.consignmentId
+          : Number(item.consignmentId),
+      consignmentItemId:
+        item.consignmentItemId === undefined ||
+        item.consignmentItemId === null ||
+        item.consignmentItemId === ""
+          ? item.consignmentItemId
+          : Number(item.consignmentItemId),
       quantity: item.quantity === undefined || item.quantity === null ? item.quantity : Number(item.quantity),
       rate: item.rate === undefined || item.rate === null ? item.rate : Number(item.rate),
     })),
@@ -151,6 +183,10 @@ function normalizeSalePayload(payload: Partial<Sale>) {
 function normalizePaymentPayload(payload: Partial<Payment>) {
   return {
     ...payload,
+    customerId:
+      payload.customerId === undefined || payload.customerId === null || payload.customerId === ""
+        ? payload.customerId
+        : Number(payload.customerId),
     paymentDate: normalizeDateTime(payload.paymentDate),
     amount: payload.amount === undefined || payload.amount === null ? payload.amount : Number(payload.amount),
   };
@@ -159,8 +195,19 @@ function normalizePaymentPayload(payload: Partial<Payment>) {
 function normalizeExpensePayload(payload: Partial<Expense>) {
   return {
     ...payload,
+    consignmentId:
+      payload.consignmentId === undefined || payload.consignmentId === null || payload.consignmentId === ""
+        ? undefined
+        : Number(payload.consignmentId),
     expenseDate: normalizeDateTime(payload.expenseDate),
     amount: payload.amount === undefined || payload.amount === null ? payload.amount : Number(payload.amount),
+  };
+}
+
+function normalizeUserPayload(payload: Partial<User> & { password?: string }) {
+  return {
+    ...payload,
+    password: payload.password?.trim() ? payload.password : undefined,
   };
 }
 
@@ -220,13 +267,13 @@ export const usersApi = {
   create(payload: Partial<User> & { password?: string }) {
     return request<unknown>("/users", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeUserPayload(payload)),
     }).then((data) => pickObject<User>(data, ["user", "data"]) ?? (data as User));
   },
   update(id: string, payload: Partial<User> & { password?: string }) {
     return request<unknown>(`/users/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizeUserPayload(payload)),
     }).then((data) => pickObject<User>(data, ["user", "data"]) ?? (data as User));
   },
   remove(id: string) {

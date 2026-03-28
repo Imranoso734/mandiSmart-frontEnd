@@ -113,3 +113,33 @@ export function pickObject<T>(data: unknown, keys: string[]): T | null {
 
   return data as T;
 }
+
+export function pickPaginationMeta(data: unknown) {
+  if (!data || typeof data !== "object") return undefined;
+
+  const root = data as Record<string, unknown>;
+  const candidates = [
+    root,
+    root.data && typeof root.data === "object" && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : null,
+  ].filter(Boolean) as Record<string, unknown>[];
+
+  for (const candidate of candidates) {
+    const total = typeof candidate.total === "number" ? candidate.total : undefined;
+    const page = typeof candidate.page === "number" ? candidate.page : undefined;
+    const limit = typeof candidate.limit === "number" ? candidate.limit : undefined;
+    const totalPages =
+      typeof candidate.totalPages === "number"
+        ? candidate.totalPages
+        : total !== undefined && limit
+          ? Math.ceil(total / limit)
+          : undefined;
+
+    if (total !== undefined || page !== undefined || limit !== undefined || totalPages !== undefined) {
+      return { total, page, limit, totalPages };
+    }
+  }
+
+  return undefined;
+}
