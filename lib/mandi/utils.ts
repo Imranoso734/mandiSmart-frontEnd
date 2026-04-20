@@ -29,6 +29,14 @@ export function formatNumber(value?: number | null) {
   }).format(Number(value ?? 0));
 }
 
+export function formatOptionalCurrency(value?: number | null, fallback = "بعد میں درج ہوگی") {
+  return value === undefined || value === null ? fallback : formatCurrency(value);
+}
+
+export function formatOptionalNumber(value?: number | null, fallback = "بعد میں درج ہوگی") {
+  return value === undefined || value === null ? fallback : formatNumber(value);
+}
+
 export function formatDate(value?: string | null) {
   if (!value) return "نامعلوم";
 
@@ -48,8 +56,32 @@ export function formatDateInput(value?: string | null) {
   return value.slice(0, 10);
 }
 
+export function normalizePhone(value?: string | null) {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 11);
+}
+
+export function formatPhone(value?: string | null) {
+  const digits = normalizePhone(value);
+  if (!digits) return "";
+  if (digits.length <= 4) return digits;
+  return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+}
+
+export function isValidPhone(value?: string | null) {
+  return /^03\d{9}$/.test(normalizePhone(value));
+}
+
+export function phoneForPayload(value?: string | null) {
+  const digits = normalizePhone(value);
+  return digits || undefined;
+}
+
 export function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function calculateBalance(customer?: Customer | null) {

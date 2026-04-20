@@ -1,5 +1,10 @@
-import { ReportsIndexPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function ReportsPage() {
+const ReportsIndexPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.ReportsIndexPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <ReportsIndexPageClient />;
 }

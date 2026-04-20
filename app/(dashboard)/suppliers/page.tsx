@@ -1,5 +1,10 @@
-import { SuppliersPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function SuppliersPage() {
+const SuppliersPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.SuppliersPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <SuppliersPageClient />;
 }

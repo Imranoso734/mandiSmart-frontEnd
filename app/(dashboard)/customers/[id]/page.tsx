@@ -1,10 +1,15 @@
-import { CustomerDetailPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
+
+const CustomerDetailPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.CustomerDetailPageClient),
+  { loading: () => null },
+);
 
 export default async function CustomerDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  return <CustomerDetailPageClient id={id} />;
+  const resolvedParams = await params;
+  return <CustomerDetailPageClient id={resolvedParams.id} />;
 }

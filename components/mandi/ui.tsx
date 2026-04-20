@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   CircleDollarSign,
@@ -246,8 +246,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem("mandi-sidebar-collapsed", String(collapsed));
   }, [collapsed]);
 
-  const visibleLinks = sidebarLinks.filter((item) =>
-    item.roles.includes((user?.role ?? "OPERATOR") as UserRole),
+  const visibleLinks = useMemo(
+    () => sidebarLinks.filter((item) => item.roles.includes((user?.role ?? "OPERATOR") as UserRole)),
+    [user?.role],
   );
 
   const pageTitle = useMemo(() => {
@@ -309,7 +310,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     "/settings": Settings,
   };
 
-  const sidebarGroups = [
+  const sidebarGroups = useMemo(() => [
     {
       title: "اہم کام",
       items: visibleLinks.filter((item) =>
@@ -328,7 +329,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ["/users", "/settings"].includes(item.href),
       ),
     },
-  ].filter((group) => group.items.length > 0);
+  ].filter((group) => group.items.length > 0), [visibleLinks]);
 
   const logout = () => {
     sessionStore.clear();
@@ -617,7 +618,7 @@ export function ThemeToggle() {
   );
 }
 
-export function PageHeader({
+function PageHeaderComponent({
   title,
   description,
   action,
@@ -627,7 +628,7 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-[1.75rem] border border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(251,246,238,0.94))] p-6 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))] lg:flex-row lg:items-center lg:justify-between lg:p-7">
+    <div className="flex flex-col gap-4 rounded-[1.75rem] border border-[var(--brand-line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(251,246,238,0.94))] p-6 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.2)] transition-[transform,box-shadow] duration-200 ease-out dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(2,6,23,0.78))] lg:flex-row lg:items-center lg:justify-between lg:p-7">
       <div className="space-y-2">
         <h1 className="font-heading text-[2.8rem] text-slate-950 dark:text-white lg:text-[3.4rem]">{title}</h1>
         {description ? <p className="max-w-3xl text-[1.12rem] leading-9 text-slate-600 dark:text-slate-300">{description}</p> : null}
@@ -637,13 +638,13 @@ export function PageHeader({
   );
 }
 
-export function SummaryCards({
+function SummaryCardsComponent({
   items,
 }: {
   items: Array<{ title: string; value: string; help?: string; tone?: "warm" | "success" | "danger" | "default" }>;
 }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 motion-safe:[&>*]:transition-transform motion-safe:[&>*]:duration-200 motion-safe:[&>*]:ease-out">
       {items.map((item) => (
         <Card
           key={item.title}
@@ -859,7 +860,7 @@ export function ConfirmDialog({
   );
 }
 
-export function DataList<T>({
+function DataListComponent<T>({
   data,
   columns,
   renderCard,
@@ -991,3 +992,8 @@ export function AmountText({
     </span>
   );
 }
+
+
+export const PageHeader = memo(PageHeaderComponent);
+export const SummaryCards = memo(SummaryCardsComponent);
+export const DataList = memo(DataListComponent) as typeof DataListComponent;

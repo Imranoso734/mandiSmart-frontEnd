@@ -188,8 +188,8 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body), serif;
-    font-size: 20.5px;
-    line-height: 2;
+    font-size: 18.5px;
+    line-height: 1.8;
     letter-spacing: 0;
     background:
       radial-gradient(circle at top right, rgba(215, 188, 132, 0.14), transparent 24%),
@@ -227,7 +227,7 @@
   select,
   button {
     font-family: inherit;
-    font-size: 1.06rem;
+    font-size: 0.98rem;
     line-height: 1.9;
   }
 

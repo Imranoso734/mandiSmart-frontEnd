@@ -1,5 +1,10 @@
-import { DailySalesReportPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function DailySalesReportPage() {
+const DailySalesReportPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.DailySalesReportPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <DailySalesReportPageClient />;
 }

@@ -34,7 +34,6 @@ export const consignmentStatusLabels: Record<ConsignmentStatus, string> = {
 
 export const commissionTypeLabels: Record<CommissionType, string> = {
   PERCENTAGE: "فی صد",
-  FIXED: "مقررہ رقم",
 };
 
 export const reportLinks = [

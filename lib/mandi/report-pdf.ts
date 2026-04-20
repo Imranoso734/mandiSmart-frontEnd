@@ -5,7 +5,7 @@ import type {
   SupplierSettlementReport,
 } from "@/lib/mandi/types";
 import { commissionTypeLabels, consignmentStatusLabels } from "@/lib/mandi/constants";
-import { formatCurrency, formatDate, formatNumber, getBalanceLabel } from "@/lib/mandi/utils";
+import { formatCurrency, formatDate, formatNumber, formatOptionalCurrency, formatOptionalNumber, getBalanceLabel } from "@/lib/mandi/utils";
 
 const PAGE_WIDTH = 1240;
 const PAGE_HEIGHT = 1754;
@@ -422,10 +422,11 @@ export async function createCustomerLedgerPdf(report: CustomerLedgerReport) {
     { title: "اندراجات", value: formatNumber(report.entries.length) },
   ]);
   painter.drawSectionTitle("کھاتہ اندراجات");
-  painter.drawTable(["بیلنس", "کریڈٹ", "ڈیبٹ", "قسم", "تاریخ"], report.entries.map((entry) => [
+  painter.drawTable(["بیلنس", "کریڈٹ", "ڈیبٹ", "تفصیل", "قسم", "تاریخ"], report.entries.map((entry) => [
     formatCurrency(entry.balance),
     formatCurrency(entry.credit),
     formatCurrency(entry.debit),
+    entry.description,
     entry.type === "SALE" ? "فروخت" : "وصولی",
     formatDate(entry.date),
   ]));
@@ -441,7 +442,7 @@ export async function createConsignmentSummaryPdf(report: ConsignmentSummaryRepo
     { title: "مجموعی فروخت", value: formatCurrency(report.totalSales) },
     { title: "کل خرچے", value: formatCurrency(report.totalExpenses) },
     { title: "بکی مقدار", value: formatNumber(report.totalItemsSold ?? 0) },
-    { title: "بچی مقدار", value: formatNumber(report.totalItemsRemaining ?? 0) },
+    { title: "بچی مقدار", value: formatOptionalNumber(report.totalItemsRemaining) },
   ]);
   painter.drawSectionTitle("بنیادی معلومات");
   painter.drawInfoBlock(report.consignment.supplier?.name ?? "سپلائر", [
@@ -452,8 +453,8 @@ export async function createConsignmentSummaryPdf(report: ConsignmentSummaryRepo
   ]);
   painter.drawSectionTitle("مال کے آئٹمز");
   painter.drawTable(["بنیادی ریٹ", "مقدار", "آئٹم"], (report.consignment.items ?? []).map((item) => [
-    formatCurrency(item.baseRate ?? 0),
-    formatNumber(item.quantityReceived),
+    formatOptionalCurrency(item.baseRate),
+    formatOptionalNumber(item.quantityReceived),
     item.productNameUrdu,
   ]));
   painter.drawConclusion(`اس گاڑی سے ${formatCurrency(report.totalSales)} کی فروخت اور ${formatCurrency(report.totalExpenses)} کے خرچے ریکارڈ ہوئے۔`);

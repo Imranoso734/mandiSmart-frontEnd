@@ -1,5 +1,10 @@
-import { UsersPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function UsersPage() {
+const UsersPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.UsersPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <UsersPageClient />;
 }

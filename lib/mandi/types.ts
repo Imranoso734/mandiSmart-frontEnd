@@ -1,7 +1,7 @@
 export type UserRole = "OWNER" | "OPERATOR";
 export type UserStatus = "ACTIVE" | "INACTIVE";
 export type ConsignmentStatus = "OPEN" | "CLOSED";
-export type CommissionType = "PERCENTAGE" | "FIXED";
+export type CommissionType = "PERCENTAGE";
 export type PaymentMethod = "CASH" | "BANK" | "MOBILE_WALLET" | "ADJUSTMENT";
 export type ExpenseType = "LABOUR" | "VEHICLE_RENT" | "COMMISSION" | "OTHER";
 
@@ -69,10 +69,10 @@ export interface ConsignmentItem {
   productNameUrdu: string;
   productNameRoman?: string | null;
   unit?: string | null;
-  quantityReceived: number;
+  quantityReceived?: number | null;
   baseRate?: number | null;
   quantitySold?: number;
-  remainingQuantity?: number;
+  remainingQuantity?: number | null;
 }
 
 export interface Consignment {
@@ -164,6 +164,7 @@ export interface LedgerEntry {
   credit: number;
   balance: number;
   reference?: string | null;
+  itemNames?: string[];
 }
 
 export interface DailySalesReport {
@@ -190,7 +191,7 @@ export interface ConsignmentSummaryReport {
   totalSales: number;
   totalExpenses: number;
   totalItemsSold?: number;
-  totalItemsRemaining?: number;
+  totalItemsRemaining?: number | null;
   sales: Sale[];
   expenses: Expense[];
 }

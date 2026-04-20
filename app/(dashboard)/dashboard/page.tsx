@@ -1,5 +1,10 @@
-import { DashboardPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function DashboardPage() {
+const DashboardPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.DashboardPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <DashboardPageClient />;
 }

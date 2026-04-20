@@ -1,5 +1,10 @@
-import { ConsignmentsPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function ConsignmentsPage() {
+const ConsignmentsPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.ConsignmentsPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <ConsignmentsPageClient />;
 }

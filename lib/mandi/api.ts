@@ -10,6 +10,7 @@ import type {
   Consignment,
   ConsignmentSummaryReport,
   Customer,
+  DashboardOverview,
   CustomerLedgerReport,
   DailySalesReport,
   Expense,
@@ -456,6 +457,11 @@ export const expensesApi = {
 };
 
 export const reportsApi = {
+  dashboardOverview(date: string) {
+    return request<unknown>(`/reports/dashboard-overview${buildQuery({ date })}`).then((data) =>
+      pickObject<DashboardOverview>(data, ["report", "data"]) ?? (data as DashboardOverview),
+    );
+  },
   dailySales(date: string) {
     return request<unknown>(`/reports/daily-sales${buildQuery({ date })}`).then((data) =>
       pickObject<DailySalesReport>(data, ["report", "data"]) ?? (data as DailySalesReport),

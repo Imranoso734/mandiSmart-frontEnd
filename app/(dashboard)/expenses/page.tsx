@@ -1,5 +1,10 @@
-import { ExpensesPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
 
-export default function ExpensesPage() {
+const ExpensesPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.ExpensesPageClient),
+  { loading: () => null },
+);
+
+export default function Page() {
   return <ExpensesPageClient />;
 }

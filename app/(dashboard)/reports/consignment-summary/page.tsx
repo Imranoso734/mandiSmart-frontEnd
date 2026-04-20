@@ -1,4 +1,9 @@
-import { ConsignmentSummaryReportPageClient } from "@/components/mandi/pages";
+import dynamic from "next/dynamic";
+
+const ConsignmentSummaryReportPageClient = dynamic(
+  () => import("@/components/mandi/pages").then((module) => module.ConsignmentSummaryReportPageClient),
+  { loading: () => null },
+);
 
 export default async function ConsignmentSummaryReportPage({
   searchParams,

@@ -1,7 +1,8 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -62,8 +63,12 @@ import {
   formatCurrency,
   formatDate,
   formatNumber,
+  formatOptionalCurrency,
+  formatOptionalNumber,
+  formatPhone,
   getBalanceLabel,
   getBalanceTone,
+  phoneForPayload,
   todayDate,
 } from "@/lib/mandi/utils";
 import { Button } from "@/components/ui/button";
@@ -90,15 +95,13 @@ import {
   SummaryCards,
   useSession,
 } from "@/components/mandi/ui";
-import {
-  ConsignmentDialog,
-  CustomerDialog,
-  ExpenseDialog,
-  PaymentDialog,
-  SaleDialog,
-  SupplierDialog,
-  UserDialog,
-} from "@/components/mandi/forms";
+const CustomerDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.CustomerDialog), { ssr: false });
+const SupplierDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.SupplierDialog), { ssr: false });
+const UserDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.UserDialog), { ssr: false });
+const ConsignmentDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.ConsignmentDialog), { ssr: false });
+const SaleDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.SaleDialog), { ssr: false });
+const PaymentDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.PaymentDialog), { ssr: false });
+const ExpenseDialog = dynamic(() => import("@/components/mandi/forms").then((module) => module.ExpenseDialog), { ssr: false });
 import { sessionStore } from "@/lib/mandi/session";
 import { cn } from "@/lib/utils";
 
@@ -145,7 +148,8 @@ function useCrudActions<T extends { id: string }>(
 }
 
 function getCustomerOptionLabel(customer: Customer) {
-  return customer.phone ? `${customer.name} - ${customer.phone}` : customer.name;
+  const phone = formatPhone(customer.phone);
+  return phone ? `${customer.name} - ${phone}` : customer.name;
 }
 
 export function LoginPageClient() {
@@ -297,17 +301,14 @@ function RecordActions({
 
 export function DashboardPageClient() {
   const session = useSession();
+  const today = todayDate();
   const results = useQueries({
     queries: [
-      { queryKey: ["sales", "dashboard"], queryFn: () => salesApi.list({ limit: 8 }) },
-      { queryKey: ["payments", "dashboard"], queryFn: () => paymentsApi.list({ limit: 6 }) },
-      { queryKey: ["expenses", "dashboard"], queryFn: () => expensesApi.list({ limit: 6 }) },
-      { queryKey: ["customers", "dashboard"], queryFn: () => customersApi.list({ limit: 100 }) },
-      { queryKey: ["consignments", "dashboard"], queryFn: () => consignmentsApi.list({ limit: 100, status: "OPEN" }) },
+      { queryKey: ["reports", "dashboard", today], queryFn: () => reportsApi.dashboardOverview(today) },
     ],
   });
 
-  const [salesQuery, paymentsQuery, expensesQuery, customersQuery, consignmentsQuery] = results;
+  const [overviewQuery] = results;
 
   if (results.some((query) => query.isLoading)) {
     return <LoadingState title="ڈیش بورڈ تیار ہو رہا ہے" />;
@@ -318,18 +319,9 @@ export function DashboardPageClient() {
     return <ErrorState title="ڈیش بورڈ لوڈ نہیں ہو سکا" error={error.message} />;
   }
 
-  const sales = salesQuery.data?.items ?? [];
-  const payments = paymentsQuery.data?.items ?? [];
-  const expenses = expensesQuery.data?.items ?? [];
-  const customers = customersQuery.data?.items ?? [];
-  const openConsignments = consignmentsQuery.data?.items ?? [];
-  const today = todayDate();
-  const todaySales = sales.filter((sale) => sale.saleDate?.slice(0, 10) === today);
-  const customerBalances = customers.map((customer) => calculateBalance(customer));
-  const outstanding = customerBalances.filter((balance) => balance > 0).reduce((sum, value) => sum + value, 0);
-  const advance = customerBalances.filter((balance) => balance < 0).reduce((sum, value) => sum + Math.abs(value), 0);
-  const recentSales = sales.slice(0, 4);
-  const topOutstandingCustomers = customers
+  const overview = overviewQuery.data;
+  const recentSales = overview?.recentSales ?? [];
+  const topOutstandingCustomers = (overview?.topCustomers ?? [])
     .slice()
     .sort((a, b) => calculateBalance(b) - calculateBalance(a))
     .slice(0, 4);
@@ -363,26 +355,26 @@ export function DashboardPageClient() {
         items={[
           {
             title: "آج کی فروخت",
-            value: formatCurrency(todaySales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0)),
-            help: `${todaySales.length || 0} اندراج`,
+            value: formatCurrency(overview?.todaySalesAmount ?? 0),
+            help: `${overview?.todaySalesCount ?? 0} اندراج`,
             tone: "success",
           },
           {
             title: "واجب الادا",
-            value: formatCurrency(outstanding),
+            value: formatCurrency(overview?.customerOutstandingTotal ?? 0),
             help: "گاہکوں سے قابل وصول رقم",
             tone: "warm",
           },
           {
             title: "آج کی وصولی",
-            value: formatCurrency(payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)),
+            value: formatCurrency(overview?.recentPaymentsTotal ?? 0),
             help: "آج درج شدہ ادائیگیاں",
             tone: "default",
           },
           {
             title: "آج کے خرچے",
-            value: formatCurrency(expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)),
-            help: `${openConsignments.length} کھلی گاڑیاں`,
+            value: formatCurrency(overview?.recentExpensesTotal ?? 0),
+            help: `${overview?.activeConsignments ?? 0} کھلی گاڑیاں`,
             tone: "danger",
           },
         ]}
@@ -477,14 +469,15 @@ export function DashboardPageClient() {
 
 export function CustomersPageClient() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [active, setActive] = useState("all");
   const [editing, setEditing] = useState<Customer | null>(null);
   const [deleting, setDeleting] = useState<Customer | null>(null);
   const [open, setOpen] = useState(false);
 
   const query = useQuery({
-    queryKey: ["customers", search, active],
-    queryFn: () => customersApi.list({ search, isActive: filterActive(active), limit: 100 }),
+    queryKey: ["customers", deferredSearch, active],
+    queryFn: () => customersApi.list({ search: deferredSearch, isActive: filterActive(active), limit: 100 }),
   });
 
   const { saveMutation, deleteMutation } = useCrudActions<Customer>(
@@ -549,7 +542,7 @@ export function CustomersPageClient() {
               data={items}
               getKey={(customer) => customer.id}
               columns={[
-                { key: "name", title: "گاہک", render: (customer) => <div><p className="font-semibold dark:text-white">{customer.name}</p><p className="text-xs text-slate-500 dark:text-slate-300">{customer.phone || "فون موجود نہیں"}</p></div> },
+                { key: "name", title: "گاہک", render: (customer) => <div><p className="font-semibold dark:text-white">{customer.name}</p><p className="text-xs text-slate-500 dark:text-slate-300">{formatPhone(customer.phone) || "فون موجود نہیں"}</p></div> },
                 { key: "address", title: "پتہ", render: (customer) => customer.address || "..." },
                 { key: "balance", title: "بیلنس", render: (customer) => {
                     const balance = calculateBalance(customer);
@@ -566,7 +559,7 @@ export function CustomersPageClient() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-heading text-2xl">{customer.name}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-300">{customer.phone || "فون موجود نہیں"}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-300">{formatPhone(customer.phone) || "فون موجود نہیں"}</p>
                         </div>
                         <StatusPill label={customer.isActive ? "فعال" : "غیر فعال"} tone={customer.isActive ? "success" : "warning"} />
                       </div>
@@ -658,7 +651,7 @@ export function CustomerDetailPageClient({ id }: { id: string }) {
       <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
         <SectionCard title="بنیادی معلومات" description="گاہک پروفائل">
           <div className="grid gap-3">
-            <MetaStat title="فون" value={customer.phone || "موجود نہیں"} />
+            <MetaStat title="فون" value={formatPhone(customer.phone) || "موجود نہیں"} />
             <MetaStat title="پتہ" value={customer.address || "موجود نہیں"} />
             <MetaStat title="حالت" value={customer.isActive ? "فعال" : "غیر فعال"} />
             <div className={`rounded-[1.5rem] border px-4 py-4 ${getBalanceTone(balance)}`}>
@@ -712,13 +705,14 @@ export function CustomerDetailPageClient({ id }: { id: string }) {
 
 export function SuppliersPageClient() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [deleting, setDeleting] = useState<Supplier | null>(null);
   const [open, setOpen] = useState(false);
 
   const query = useQuery({
-    queryKey: ["suppliers", search],
-    queryFn: () => suppliersApi.list({ search, limit: 100 }),
+    queryKey: ["suppliers", deferredSearch],
+    queryFn: () => suppliersApi.list({ search: deferredSearch, limit: 100 }),
   });
   const consignmentsQuery = useQuery({
     queryKey: ["consignments", "supplier-summary"],
@@ -770,7 +764,7 @@ export function SuppliersPageClient() {
               data={items}
               getKey={(supplier) => supplier.id}
               columns={[
-                { key: "name", title: "سپلائر", render: (supplier) => <div><p className="font-semibold dark:text-white">{supplier.name}</p><p className="text-xs text-slate-500 dark:text-slate-300">{supplier.phone || "فون موجود نہیں"}</p></div> },
+                { key: "name", title: "سپلائر", render: (supplier) => <div><p className="font-semibold dark:text-white">{supplier.name}</p><p className="text-xs text-slate-500 dark:text-slate-300">{formatPhone(supplier.phone) || "فون موجود نہیں"}</p></div> },
                 { key: "address", title: "پتہ", render: (supplier) => supplier.address || "..." },
                 { key: "consignments", title: "گاڑیاں", render: (supplier) => formatNumber(consignments.filter((item) => item.supplierId === supplier.id).length) },
                 { key: "status", title: "حالت", render: (supplier) => <StatusPill label={supplier.isActive ? "فعال" : "غیر فعال"} tone={supplier.isActive ? "success" : "warning"} /> },
@@ -782,7 +776,7 @@ export function SuppliersPageClient() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-heading text-2xl">{supplier.name}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-300">{supplier.phone || "فون موجود نہیں"}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-300">{formatPhone(supplier.phone) || "فون موجود نہیں"}</p>
                       </div>
                       <StatusPill label={supplier.isActive ? "فعال" : "غیر فعال"} tone={supplier.isActive ? "success" : "warning"} />
                     </div>
@@ -864,7 +858,7 @@ export function SupplierDetailPageClient({ id }: { id: string }) {
       <div className="grid gap-6 xl:grid-cols-[0.75fr_1.25fr]">
         <SectionCard title="بنیادی معلومات" description="سپلائر ریکارڈ">
           <div className="grid gap-3">
-            <MetaStat title="فون" value={supplier.phone || "موجود نہیں"} />
+            <MetaStat title="فون" value={formatPhone(supplier.phone) || "موجود نہیں"} />
             <MetaStat title="پتہ" value={supplier.address || "موجود نہیں"} />
             <MetaStat title="کل گاڑیاں" value={formatNumber(consignments.length)} />
             <MetaStat title="کھلی گاڑیاں" value={formatNumber(consignments.filter((item) => item.status === "OPEN").length)} />
@@ -916,13 +910,14 @@ export function SupplierDetailPageClient({ id }: { id: string }) {
 export function UsersPageClient() {
   const session = useSession();
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
 
   const query = useQuery({
-    queryKey: ["users", search],
-    queryFn: () => usersApi.list({ search, limit: 100 }),
+    queryKey: ["users", deferredSearch],
+    queryFn: () => usersApi.list({ search: deferredSearch, limit: 100 }),
     enabled: session?.role === "OWNER",
   });
   const { saveMutation, deleteMutation } = useCrudActions<User>(
@@ -980,7 +975,7 @@ export function UsersPageClient() {
               getKey={(user) => user.id}
               columns={[
                 { key: "name", title: "صارف", render: (user) => <div><p className="font-semibold dark:text-white">{user.name}</p><p className="text-xs text-slate-500 dark:text-slate-300">{user.email}</p></div> },
-                { key: "phone", title: "فون", render: (user) => user.phone || "..." },
+                { key: "phone", title: "فون", render: (user) => formatPhone(user.phone) || "..." },
                 { key: "role", title: "رول", render: (user) => <StatusPill label={roleLabels[user.role]} tone={user.role === "OWNER" ? "default" : "warning"} /> },
                 { key: "status", title: "حالت", render: (user) => <StatusPill label={user.isActive ? "فعال" : "غیر فعال"} tone={user.isActive ? "success" : "warning"} /> },
                 { key: "actions", title: "عمل", render: (user) => <RecordActions onEdit={() => { setEditing(user); setOpen(true); }} onDelete={() => setDeleting(user)} /> },
@@ -1049,7 +1044,7 @@ export function SettingsPageClient() {
   const values = {
     name: form.name ?? tenant?.name ?? "",
     slug: tenant?.slug ?? "",
-    phone: form.phone ?? tenant?.phone ?? "",
+    phone: form.phone ?? formatPhone(tenant?.phone) ?? "",
     address: form.address ?? tenant?.address ?? "",
     locale: form.locale ?? tenant?.locale ?? "ur-PK",
     currency: form.currency ?? tenant?.currency ?? "PKR",
@@ -1082,7 +1077,7 @@ export function SettingsPageClient() {
                 event.preventDefault();
                 mutation.mutate({
                   name: values.name,
-                  phone: values.phone,
+                  phone: phoneForPayload(values.phone),
                   address: values.address,
                   locale: values.locale,
                   currency: values.currency,
@@ -1096,7 +1091,7 @@ export function SettingsPageClient() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium">فون</label>
-                <Input value={values.phone ?? ""} disabled={session?.role !== "OWNER"} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} />
+                <Input value={values.phone ?? ""} disabled={session?.role !== "OWNER"} onChange={(event) => setForm((prev) => ({ ...prev, phone: formatPhone(event.target.value) }))} placeholder="0346-7026734" inputMode="numeric" dir="ltr" />
               </div>
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-medium">پتہ</label>
@@ -1131,14 +1126,15 @@ export function SettingsPageClient() {
 
 export function ConsignmentsPageClient() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [status, setStatus] = useState("all");
   const [editing, setEditing] = useState<Consignment | null>(null);
   const [deleting, setDeleting] = useState<Consignment | null>(null);
   const [open, setOpen] = useState(false);
 
   const query = useQuery({
-    queryKey: ["consignments", search, status],
-    queryFn: () => consignmentsApi.list({ search, status: status === "all" ? undefined : status, limit: 100 }),
+    queryKey: ["consignments", deferredSearch, status],
+    queryFn: () => consignmentsApi.list({ search: deferredSearch, status: status === "all" ? undefined : status, limit: 100 }),
   });
   const suppliersQuery = useQuery({
     queryKey: ["suppliers", "options"],
@@ -1313,6 +1309,7 @@ export function ConsignmentDetailPageClient({ id }: { id: string }) {
   const totalExpenses =
     Number(report?.totalExpenses ?? 0) ||
     reportExpenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0);
+  const remainingAmount = totalSales - totalExpenses;
 
   return (
     <div className="space-y-6">
@@ -1339,7 +1336,7 @@ export function ConsignmentDetailPageClient({ id }: { id: string }) {
           { title: "حالت", value: consignmentStatusLabels[consignment.status], tone: consignment.status === "OPEN" ? "warm" : "success" },
           { title: "مجموعی فروخت", value: formatCurrency(totalSales) },
           { title: "کل خرچے", value: formatCurrency(totalExpenses), tone: "danger" },
-          { title: "آئٹمز", value: formatNumber(consignment.items?.length ?? 0), tone: "default" },
+          { title: "باقی رقم", value: formatCurrency(remainingAmount), tone: remainingAmount >= 0 ? "success" : "danger" },
         ]}
       />
 
@@ -1360,8 +1357,8 @@ export function ConsignmentDetailPageClient({ id }: { id: string }) {
                   <div key={item.id} className="rounded-[1.5rem] border border-[var(--brand-line)] bg-[var(--surface-soft)] p-4 dark:border-white/10 dark:bg-slate-900/60">
                   <p className="font-semibold text-slate-900 dark:text-white">{item.productNameUrdu}</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <MetaStat title="موصول مقدار" value={formatNumber(item.quantityReceived)} />
-                    <MetaStat title="بنیادی ریٹ" value={formatCurrency(item.baseRate ?? 0)} />
+                    <MetaStat title="موصول مقدار" value={formatOptionalNumber(item.quantityReceived)} />
+                    <MetaStat title="بنیادی ریٹ" value={formatOptionalCurrency(item.baseRate)} />
                   </div>
                 </div>
               ))}
@@ -1429,6 +1426,7 @@ export function ConsignmentDetailPageClient({ id }: { id: string }) {
 
 export function SalesPageClient() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [customerId, setCustomerId] = useState("all");
   const [editing, setEditing] = useState<Sale | null>(null);
   const [deleting, setDeleting] = useState<Sale | null>(null);
@@ -1436,10 +1434,10 @@ export function SalesPageClient() {
   const queryClient = useQueryClient();
 
   const salesQuery = useQuery({
-    queryKey: ["sales", search, customerId],
+    queryKey: ["sales", deferredSearch, customerId],
     queryFn: () =>
       salesApi.list({
-        search,
+        search: deferredSearch,
         limit: 100,
         customerId: customerId === "all" ? undefined : customerId,
       }),
@@ -1591,6 +1589,7 @@ export function SalesPageClient() {
 
 export function PaymentsPageClient() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [customerId, setCustomerId] = useState("all");
   const [method, setMethod] = useState("all");
   const [editing, setEditing] = useState<Payment | null>(null);
@@ -1598,10 +1597,10 @@ export function PaymentsPageClient() {
   const [open, setOpen] = useState(false);
 
   const paymentsQuery = useQuery({
-    queryKey: ["payments", search, customerId, method],
+    queryKey: ["payments", deferredSearch, customerId, method],
     queryFn: () =>
       paymentsApi.list({
-        search,
+        search: deferredSearch,
         limit: 100,
         customerId: customerId === "all" ? undefined : customerId,
         method: method === "all" ? undefined : method,
@@ -1742,6 +1741,7 @@ export function PaymentsPageClient() {
 
 export function ExpensesPageClient() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [expenseType, setExpenseType] = useState("all");
   const [consignmentId, setConsignmentId] = useState("all");
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -1749,10 +1749,10 @@ export function ExpensesPageClient() {
   const [open, setOpen] = useState(false);
 
   const expensesQuery = useQuery({
-    queryKey: ["expenses", search, expenseType, consignmentId],
+    queryKey: ["expenses", deferredSearch, expenseType, consignmentId],
     queryFn: () =>
       expensesApi.list({
-        search,
+        search: deferredSearch,
         limit: 100,
         expenseType: expenseType === "all" ? undefined : expenseType,
         consignmentId: consignmentId === "all" ? undefined : consignmentId,
@@ -1782,7 +1782,7 @@ export function ExpensesPageClient() {
     <div className="space-y-6">
       <PageHeader
         title="خرچے"
-        description="مزدوری، گاڑی کرایہ، کمیشن اور دیگر خرچے درج کریں، چاہیں تو کسی گاڑی سے بھی جوڑ دیں۔"
+        description="مزدوری، گاڑی کرایہ اور دیگر خرچے درج کریں۔ کمیشن متعلقہ گاڑی کی فروخت سے خودکار طور پر نکلتا ہے۔"
         action={<ActionButton onClick={() => { setEditing(null); setOpen(true); }}>نیا خرچہ</ActionButton>}
       />
 
@@ -2135,6 +2135,7 @@ export function CustomerLedgerReportPageClient({ customerId: initialCustomerId }
                     columns={[
                       { key: "date", title: "تاریخ", render: (entry) => formatDate(entry.date) },
                       { key: "type", title: "قسم", render: (entry) => <StatusPill label={entry.type === "SALE" ? "فروخت" : "وصولی"} tone={entry.type === "SALE" ? "warning" : "success"} /> },
+                      { key: "desc", title: "تفصیل", render: (entry) => entry.description },
                       { key: "debit", title: "ڈیبٹ", render: (entry) => formatCurrency(entry.debit) },
                       { key: "credit", title: "کریڈٹ", render: (entry) => formatCurrency(entry.credit) },
                       { key: "balance", title: "بیلنس", render: (entry) => formatCurrency(entry.balance) },
@@ -2288,7 +2289,7 @@ export function ConsignmentSummaryReportPageClient({ consignmentId: initialConsi
                             </div>
                             <div className="text-left">
                               <p className="text-sm text-slate-500 dark:text-slate-300">موصول مقدار</p>
-                              <p className="font-heading text-2xl">{formatNumber(item.quantityReceived)}</p>
+                              <p className="font-heading text-2xl">{formatOptionalNumber(item.quantityReceived)}</p>
                             </div>
                           </div>
                         </div>
@@ -2302,7 +2303,7 @@ export function ConsignmentSummaryReportPageClient({ consignmentId: initialConsi
                   <div className="grid gap-3">
                     <MetaStat title="فروخت اندراجات" value={formatNumber(sales.length)} />
                     <MetaStat title="خرچوں کے اندراجات" value={formatNumber(expenses.length)} />
-                    <MetaStat title="بچی مقدار" value={formatNumber(report.totalItemsRemaining ?? 0)} />
+                    <MetaStat title="بچی مقدار" value={formatOptionalNumber(report.totalItemsRemaining)} />
                     <MetaStat title="بکی مقدار" value={formatNumber(report.totalItemsSold ?? 0)} />
                   </div>
                 </SectionCard>

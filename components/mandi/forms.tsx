@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueries } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 
@@ -26,7 +26,6 @@ import {
 import { consignmentsApi } from "@/lib/mandi/api";
 import { commissionTypeLabels, expenseTypeLabels, paymentMethodLabels, roleLabels } from "@/lib/mandi/constants";
 import type {
-  CommissionType,
   Consignment,
   Customer,
   Expense,
@@ -34,7 +33,17 @@ import type {
   Supplier,
   User,
 } from "@/lib/mandi/types";
-import { calculateBalance, formatCurrency, getBalanceLabel, getBalanceTone, todayDate } from "@/lib/mandi/utils";
+import {
+  calculateBalance,
+  formatCurrency,
+  formatPhone,
+  getBalanceLabel,
+  getBalanceTone,
+  isValidPhone,
+  normalizePhone,
+  phoneForPayload,
+  todayDate,
+} from "@/lib/mandi/utils";
 
 type DialogBaseProps<T> = {
   open: boolean;
@@ -49,8 +58,8 @@ type ConsignmentItemFormRow = {
   productNameUrdu: string;
   productNameRoman: string;
   unit: string;
-  quantityReceived: number;
-  baseRate: number;
+  quantityReceived?: number;
+  baseRate?: number | null;
 };
 
 type ConsignmentFormValues = Omit<Partial<Consignment>, "items"> & {
@@ -105,8 +114,30 @@ function asSelectValue(value?: string | number | null) {
   return String(value);
 }
 
+function parseOptionalNumber(value: unknown) {
+  if (value === "" || value === undefined || value === null) return undefined;
+  const numeric = Number(value);
+  return Number.isNaN(numeric) ? undefined : numeric;
+}
+
 function getCustomerOptionLabel(customer: Customer) {
-  return customer.phone ? `${customer.name} - ${customer.phone}` : customer.name;
+  const phone = formatPhone(customer.phone);
+  return phone ? `${customer.name} - ${phone}` : customer.name;
+}
+
+function getSupplierOptionLabel(supplier: Supplier) {
+  const phone = formatPhone(supplier.phone);
+  return phone ? `${supplier.name} - ${phone}` : supplier.name;
+}
+
+function phoneSearchText(value?: string | null) {
+  const phone = formatPhone(value);
+  const digits = normalizePhone(value);
+  return `${phone} ${digits}`.trim();
+}
+
+function phoneValidation(value?: string | null) {
+  return !value || isValidPhone(value) || "فون نمبر 03 سے شروع اور 11 ہندسوں کا ہونا چاہیے";
 }
 
 function getConsignmentOptionLabel(consignment: Consignment) {
@@ -115,18 +146,102 @@ function getConsignmentOptionLabel(consignment: Consignment) {
   return `${vehicle} - ${supplier}`;
 }
 
+const consignmentUnitOptions = [
+  { value: "تھڑی", label: "تھڑی" },
+  { value: "بوری", label: "بوری" },
+  { value: "پیٹی", label: "پیٹی" },
+  { value: "کریٹ", label: "کریٹ" },
+  { value: "ڈبہ", label: "ڈبہ" },
+  { value: "درجن", label: "درجن" },
+  { value: "کلو", label: "کلو" },
+] as const;
+
+const editableExpenseTypeEntries = Object.entries(expenseTypeLabels).filter(
+  ([value]) => value !== "COMMISSION",
+);
+
+type SearchableSelectOption = {
+  value: string;
+  label: string;
+  searchText: string;
+};
+
+function SearchableSelect({
+  value,
+  onValueChange,
+  placeholder,
+  searchPlaceholder,
+  emptyText,
+  options,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  placeholder: string;
+  searchPlaceholder: string;
+  emptyText: string;
+  options: SearchableSelectOption[];
+}) {
+  const [search, setSearch] = useState("");
+
+  const filteredOptions = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    if (!normalizedSearch) {
+      return options;
+    }
+
+    return options.filter((option) => option.searchText.includes(normalizedSearch));
+  }, [options, search]);
+
+  return (
+    <Select
+      value={value}
+      onValueChange={onValueChange}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSearch("");
+        }
+      }}
+    >
+      <SelectTrigger className="w-full">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent position="popper" align="end" className="w-[var(--radix-select-trigger-width)]">
+        <div className="sticky top-0 z-10 bg-popover p-2">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => event.stopPropagation()}
+            placeholder={searchPlaceholder}
+            className="h-10"
+          />
+        </div>
+        {filteredOptions.length ? (
+          filteredOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))
+        ) : (
+          <div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-300">{emptyText}</div>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function CustomerDialog(props: DialogBaseProps<Customer>) {
   const form = useForm<Partial<Customer>>({
     defaultValues: {
       name: props.initialValues?.name ?? "",
-      phone: props.initialValues?.phone ?? "",
+      phone: formatPhone(props.initialValues?.phone),
       address: props.initialValues?.address ?? "",
       notes: props.initialValues?.notes ?? "",
       isActive: props.initialValues?.isActive ?? true,
     },
     values: {
       name: props.initialValues?.name ?? "",
-      phone: props.initialValues?.phone ?? "",
+      phone: formatPhone(props.initialValues?.phone),
       address: props.initialValues?.address ?? "",
       notes: props.initialValues?.notes ?? "",
       isActive: props.initialValues?.isActive ?? true,
@@ -140,7 +255,7 @@ export function CustomerDialog(props: DialogBaseProps<Customer>) {
       title={props.initialValues?.id ? "گاہک میں ترمیم" : "نیا گاہک"}
       description="گاہک کا بنیادی ریکارڈ رکھیں تاکہ کھاتہ اور وصولی واضح رہے۔"
     >
-      <form onSubmit={form.handleSubmit((values) => props.onSubmit(values))} className="space-y-5">
+      <form onSubmit={form.handleSubmit((values) => props.onSubmit({ ...values, phone: phoneForPayload(values.phone) }))} className="space-y-5">
         <FieldGroup className="grid gap-4 md:grid-cols-2">
           <Field>
             <FieldLabel>نام</FieldLabel>
@@ -149,7 +264,21 @@ export function CustomerDialog(props: DialogBaseProps<Customer>) {
           </Field>
           <Field>
             <FieldLabel>فون</FieldLabel>
-            <Input {...form.register("phone")} placeholder="فون نمبر" />
+            <Controller
+              control={form.control}
+              name="phone"
+              rules={{ validate: phoneValidation }}
+              render={({ field }) => (
+                <Input
+                  value={field.value ?? ""}
+                  onChange={(event) => field.onChange(formatPhone(event.target.value))}
+                  placeholder="0346-7026734"
+                  inputMode="numeric"
+                  dir="ltr"
+                />
+              )}
+            />
+            <FieldError errors={[form.formState.errors.phone]} />
           </Field>
           <Field>
             <FieldLabel>پتہ</FieldLabel>
@@ -192,14 +321,14 @@ export function SupplierDialog(props: DialogBaseProps<Supplier>) {
   const form = useForm<Partial<Supplier>>({
     defaultValues: {
       name: props.initialValues?.name ?? "",
-      phone: props.initialValues?.phone ?? "",
+      phone: formatPhone(props.initialValues?.phone),
       address: props.initialValues?.address ?? "",
       notes: props.initialValues?.notes ?? "",
       isActive: props.initialValues?.isActive ?? true,
     },
     values: {
       name: props.initialValues?.name ?? "",
-      phone: props.initialValues?.phone ?? "",
+      phone: formatPhone(props.initialValues?.phone),
       address: props.initialValues?.address ?? "",
       notes: props.initialValues?.notes ?? "",
       isActive: props.initialValues?.isActive ?? true,
@@ -213,7 +342,7 @@ export function SupplierDialog(props: DialogBaseProps<Supplier>) {
       title={props.initialValues?.id ? "سپلائر میں ترمیم" : "نیا سپلائر"}
       description="سپلائر یا کسان کا ریکارڈ اس کی گاڑیوں اور حساب کے لئے استعمال ہوگا۔"
     >
-      <form onSubmit={form.handleSubmit((values) => props.onSubmit(values))} className="space-y-5">
+      <form onSubmit={form.handleSubmit((values) => props.onSubmit({ ...values, phone: phoneForPayload(values.phone) }))} className="space-y-5">
         <FieldGroup className="grid gap-4 md:grid-cols-2">
           <Field>
             <FieldLabel>نام</FieldLabel>
@@ -222,7 +351,21 @@ export function SupplierDialog(props: DialogBaseProps<Supplier>) {
           </Field>
           <Field>
             <FieldLabel>فون</FieldLabel>
-            <Input {...form.register("phone")} placeholder="فون نمبر" />
+            <Controller
+              control={form.control}
+              name="phone"
+              rules={{ validate: phoneValidation }}
+              render={({ field }) => (
+                <Input
+                  value={field.value ?? ""}
+                  onChange={(event) => field.onChange(formatPhone(event.target.value))}
+                  placeholder="0346-7026734"
+                  inputMode="numeric"
+                  dir="ltr"
+                />
+              )}
+            />
+            <FieldError errors={[form.formState.errors.phone]} />
           </Field>
           <Field>
             <FieldLabel>پتہ</FieldLabel>
@@ -266,7 +409,7 @@ export function UserDialog(props: DialogBaseProps<User & { password?: string }>)
     defaultValues: {
       name: props.initialValues?.name ?? "",
       email: props.initialValues?.email ?? "",
-      phone: props.initialValues?.phone ?? "",
+      phone: formatPhone(props.initialValues?.phone),
       role: props.initialValues?.role ?? "OPERATOR",
       password: "",
       isActive: props.initialValues?.isActive ?? true,
@@ -274,7 +417,7 @@ export function UserDialog(props: DialogBaseProps<User & { password?: string }>)
     values: {
       name: props.initialValues?.name ?? "",
       email: props.initialValues?.email ?? "",
-      phone: props.initialValues?.phone ?? "",
+      phone: formatPhone(props.initialValues?.phone),
       role: props.initialValues?.role ?? "OPERATOR",
       password: "",
       isActive: props.initialValues?.isActive ?? true,
@@ -288,7 +431,7 @@ export function UserDialog(props: DialogBaseProps<User & { password?: string }>)
       title={props.initialValues?.id ? "آپریٹر میں ترمیم" : "نیا آپریٹر"}
       description="صرف مالک اس ماڈیول سے مشی یا اضافی صارف بنا سکتا ہے۔"
     >
-      <form onSubmit={form.handleSubmit((values) => props.onSubmit(values))} className="space-y-5">
+      <form onSubmit={form.handleSubmit((values) => props.onSubmit({ ...values, phone: phoneForPayload(values.phone) }))} className="space-y-5">
         <FieldGroup className="grid gap-4 md:grid-cols-2">
           <Field>
             <FieldLabel>نام</FieldLabel>
@@ -302,7 +445,21 @@ export function UserDialog(props: DialogBaseProps<User & { password?: string }>)
           </Field>
           <Field>
             <FieldLabel>فون</FieldLabel>
-            <Input {...form.register("phone")} placeholder="فون نمبر" />
+            <Controller
+              control={form.control}
+              name="phone"
+              rules={{ validate: phoneValidation }}
+              render={({ field }) => (
+                <Input
+                  value={field.value ?? ""}
+                  onChange={(event) => field.onChange(formatPhone(event.target.value))}
+                  placeholder="0346-7026734"
+                  inputMode="numeric"
+                  dir="ltr"
+                />
+              )}
+            />
+            <FieldError errors={[form.formState.errors.phone]} />
           </Field>
           <Field>
             <FieldLabel>رول</FieldLabel>
@@ -363,7 +520,7 @@ export function ExpenseDialog({
   const form = useForm<Partial<Expense>>({
     defaultValues: {
       consignmentId: props.initialValues?.consignmentId ?? "",
-      expenseType: props.initialValues?.expenseType ?? "LABOUR",
+      expenseType: props.initialValues?.expenseType === "COMMISSION" ? "LABOUR" : (props.initialValues?.expenseType ?? "LABOUR"),
       titleUrdu: props.initialValues?.titleUrdu ?? "",
       amount: props.initialValues?.amount ?? 0,
       expenseDate: props.initialValues?.expenseDate?.slice(0, 10) ?? todayDate(),
@@ -371,7 +528,7 @@ export function ExpenseDialog({
     },
     values: {
       consignmentId: props.initialValues?.consignmentId ?? "",
-      expenseType: props.initialValues?.expenseType ?? "LABOUR",
+      expenseType: props.initialValues?.expenseType === "COMMISSION" ? "LABOUR" : (props.initialValues?.expenseType ?? "LABOUR"),
       titleUrdu: props.initialValues?.titleUrdu ?? "",
       amount: props.initialValues?.amount ?? 0,
       expenseDate: props.initialValues?.expenseDate?.slice(0, 10) ?? todayDate(),
@@ -404,7 +561,7 @@ export function ExpenseDialog({
                     <SelectValue placeholder="قسم منتخب کریں" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(expenseTypeLabels).map(([value, label]) => (
+                    {editableExpenseTypeEntries.map(([value, label]) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>
@@ -494,6 +651,14 @@ export function PaymentDialog({
   const selectedCustomerId = asSelectValue(form.watch("customerId"));
   const selectedCustomer = customers.find((customer) => asSelectValue(customer.id) === selectedCustomerId);
   const selectedCustomerBalance = selectedCustomer ? calculateBalance(selectedCustomer) : 0;
+  const customerOptions = customers.map((customer) => {
+    const label = getCustomerOptionLabel(customer);
+    return {
+      value: asSelectValue(customer.id),
+      label,
+      searchText: `${customer.name} ${phoneSearchText(customer.phone)} ${label}`.toLowerCase(),
+    };
+  });
 
   return (
     <DialogShell
@@ -511,18 +676,14 @@ export function PaymentDialog({
               name="customerId"
               rules={{ required: "گاہک ضروری ہے" }}
               render={({ field }) => (
-                <Select value={asSelectValue(field.value)} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="گاہک منتخب کریں" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={asSelectValue(customer.id)}>
-                        {getCustomerOptionLabel(customer)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={asSelectValue(field.value)}
+                  onValueChange={field.onChange}
+                  placeholder="گاہک منتخب کریں"
+                  searchPlaceholder="نام یا فون سے تلاش کریں"
+                  emptyText="کوئی گاہک نہیں ملا"
+                  options={customerOptions}
+                />
               )}
             />
             <FieldError errors={[form.formState.errors.customerId]} />
@@ -566,7 +727,7 @@ export function PaymentDialog({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading text-2xl">{selectedCustomer.name}</p>
-                <p className="text-base">{selectedCustomer.phone || "فون موجود نہیں"}</p>
+                <p className="text-base">{formatPhone(selectedCustomer.phone) || "فون موجود نہیں"}</p>
               </div>
               <div className="text-left">
                 <p className="text-base">{getBalanceLabel(selectedCustomerBalance)}</p>
@@ -600,17 +761,17 @@ export function ConsignmentDialog({
       id: item.id,
       productNameUrdu: item.productNameUrdu,
       productNameRoman: item.productNameRoman ?? "",
-      unit: item.unit ?? "",
-      quantityReceived: item.quantityReceived,
-      baseRate: item.baseRate ?? 0,
-    })) ?? [{ productNameUrdu: "", productNameRoman: "", unit: "", quantityReceived: 0, baseRate: 0 }];
+      unit: item.unit ?? "کلو",
+      quantityReceived: item.quantityReceived ?? undefined,
+      baseRate: item.baseRate ?? undefined,
+    })) ?? [{ productNameUrdu: "", productNameRoman: "", unit: "کلو", quantityReceived: undefined, baseRate: undefined }];
 
   const form = useForm<ConsignmentFormValues>({
     defaultValues: {
       supplierId: props.initialValues?.supplierId ?? "",
       vehicleNumber: props.initialValues?.vehicleNumber ?? "",
       driverName: props.initialValues?.driverName ?? "",
-      driverPhone: props.initialValues?.driverPhone ?? "",
+      driverPhone: formatPhone(props.initialValues?.driverPhone),
       arrivalDate: props.initialValues?.arrivalDate?.slice(0, 10) ?? todayDate(),
       notes: props.initialValues?.notes ?? "",
       commissionType: props.initialValues?.commissionType ?? "PERCENTAGE",
@@ -621,7 +782,7 @@ export function ConsignmentDialog({
       supplierId: props.initialValues?.supplierId ?? "",
       vehicleNumber: props.initialValues?.vehicleNumber ?? "",
       driverName: props.initialValues?.driverName ?? "",
-      driverPhone: props.initialValues?.driverPhone ?? "",
+      driverPhone: formatPhone(props.initialValues?.driverPhone),
       arrivalDate: props.initialValues?.arrivalDate?.slice(0, 10) ?? todayDate(),
       notes: props.initialValues?.notes ?? "",
       commissionType: props.initialValues?.commissionType ?? "PERCENTAGE",
@@ -634,26 +795,35 @@ export function ConsignmentDialog({
     control: form.control,
     name: "items",
   });
+  const supplierOptions = suppliers.map((supplier) => {
+    const label = getSupplierOptionLabel(supplier);
+    return {
+      value: supplier.id,
+      label,
+      searchText: `${supplier.name} ${phoneSearchText(supplier.phone)} ${label}`.toLowerCase(),
+    };
+  });
 
   return (
     <DialogShell
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={props.initialValues?.id ? "گاڑی میں ترمیم" : "نئی گاڑی"}
-      description="ٹرک، سپلائر، کمیشن اور متعدد آئٹمز ایک ہی ریکارڈ میں درج کریں۔"
+      description="ٹرک، سپلائر، خودکار کمیشن اور متعدد آئٹمز ایک ہی ریکارڈ میں درج کریں۔"
     >
       <form
         onSubmit={form.handleSubmit((values) =>
           props.onSubmit({
             ...values,
+            driverPhone: phoneForPayload(values.driverPhone),
             arrivalDate: toDateTimeValue(values.arrivalDate),
             items: values.items.map((item) => ({
               ...(item.id ? { id: item.id } : {}),
               productNameUrdu: item.productNameUrdu,
               productNameRoman: item.productNameRoman,
-              unit: item.unit,
-              quantityReceived: Number(item.quantityReceived || 0),
-              baseRate: Number(item.baseRate || 0),
+              unit: item.unit || "کلو",
+              quantityReceived: parseOptionalNumber(item.quantityReceived),
+              baseRate: parseOptionalNumber(item.baseRate),
             })),
           })
         )}
@@ -667,18 +837,14 @@ export function ConsignmentDialog({
               name="supplierId"
               rules={{ required: "سپلائر ضروری ہے" }}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="سپلائر منتخب کریں" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={field.value ?? ""}
+                  onValueChange={field.onChange}
+                  placeholder="سپلائر منتخب کریں"
+                  searchPlaceholder="نام یا فون سے تلاش کریں"
+                  emptyText="کوئی سپلائر نہیں ملا"
+                  options={supplierOptions}
+                />
               )}
             />
             <FieldError errors={[form.formState.errors.supplierId]} />
@@ -697,7 +863,21 @@ export function ConsignmentDialog({
           </Field>
           <Field>
             <FieldLabel>ڈرائیور فون</FieldLabel>
-            <Input {...form.register("driverPhone")} placeholder="فون نمبر" />
+            <Controller
+              control={form.control}
+              name="driverPhone"
+              rules={{ validate: phoneValidation }}
+              render={({ field }) => (
+                <Input
+                  value={field.value ?? ""}
+                  onChange={(event) => field.onChange(formatPhone(event.target.value))}
+                  placeholder="0346-7026734"
+                  inputMode="numeric"
+                  dir="ltr"
+                />
+              )}
+            />
+            <FieldError errors={[form.formState.errors.driverPhone]} />
           </Field>
           <Field>
             <FieldLabel>کمیشن طریقہ</FieldLabel>
@@ -705,7 +885,7 @@ export function ConsignmentDialog({
               control={form.control}
               name="commissionType"
               render={({ field }) => (
-                <Select value={field.value as CommissionType} onValueChange={field.onChange}>
+                <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="طریقہ منتخب کریں" />
                   </SelectTrigger>
@@ -739,9 +919,9 @@ export function ConsignmentDialog({
                 items.append({
                   productNameUrdu: "",
                   productNameRoman: "",
-                  unit: "",
-                  quantityReceived: 0,
-                  baseRate: 0,
+                  unit: "کلو",
+                  quantityReceived: undefined,
+                  baseRate: undefined,
                 })
               }
             >
@@ -764,15 +944,32 @@ export function ConsignmentDialog({
                   </Field>
                   <Field>
                     <FieldLabel>اکائی</FieldLabel>
-                    <Input {...form.register(`items.${index}.unit` as const)} placeholder="بوری / کریٹ" />
+                    <Controller
+                      control={form.control}
+                      name={`items.${index}.unit` as const}
+                      render={({ field }) => (
+                        <Select value={field.value || "کلو"} onValueChange={field.onChange}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="اکائی منتخب کریں" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {consignmentUnitOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
                   </Field>
                   <Field>
                     <FieldLabel>موصول مقدار</FieldLabel>
-                    <Input {...form.register(`items.${index}.quantityReceived` as const, { valueAsNumber: true })} type="number" min="0" />
+                    <Input {...form.register(`items.${index}.quantityReceived` as const, { setValueAs: parseOptionalNumber })} type="number" min="0" placeholder="بعد میں درج کریں" />
                   </Field>
                   <Field>
                     <FieldLabel>بنیادی ریٹ</FieldLabel>
-                    <Input {...form.register(`items.${index}.baseRate` as const, { valueAsNumber: true })} type="number" min="0" />
+                    <Input {...form.register(`items.${index}.baseRate` as const, { setValueAs: parseOptionalNumber })} type="number" min="0" placeholder="بعد میں درج کریں" />
                   </Field>
                 </div>
                 <div className="mt-3 flex justify-end">
@@ -901,6 +1098,14 @@ export function SaleDialog({
       watchedItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.rate || 0), 0),
     [watchedItems],
   );
+  const customerOptions = customers.map((customer) => {
+    const label = getCustomerOptionLabel(customer);
+    return {
+      value: asSelectValue(customer.id),
+      label,
+      searchText: `${customer.name} ${phoneSearchText(customer.phone)} ${label}`.toLowerCase(),
+    };
+  });
 
   return (
     <DialogShell
@@ -938,18 +1143,14 @@ export function SaleDialog({
               name="customerId"
               rules={{ required: "گاہک ضروری ہے" }}
               render={({ field }) => (
-                <Select value={asSelectValue(field.value)} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="گاہک منتخب کریں" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={asSelectValue(customer.id)}>
-                        {getCustomerOptionLabel(customer)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={asSelectValue(field.value)}
+                  onValueChange={field.onChange}
+                  placeholder="گاہک منتخب کریں"
+                  searchPlaceholder="نام یا فون سے تلاش کریں"
+                  emptyText="کوئی گاہک نہیں ملا"
+                  options={customerOptions}
+                />
               )}
             />
           </Field>
@@ -986,7 +1187,13 @@ export function SaleDialog({
           <div className="space-y-4">
             {items.fields.map((field, index) => {
               const consignmentId = asSelectValue(form.watch(`items.${index}.consignmentId`));
+              const selectedItemId = asSelectValue(form.watch(`items.${index}.consignmentItemId`));
               const relatedItems = relatedItemsByConsignmentId.get(consignmentId) ?? [];
+              const selectableItems = relatedItems.filter((item) => item.id);
+              const selectedItem = selectableItems.find((item) => asSelectValue(item.id) === selectedItemId);
+              const hasSelectableItem = selectableItems.length > 0;
+              const itemsWithPendingQuantity = selectableItems.filter((item) => item.quantityReceived === undefined || item.quantityReceived === null).length;
+              const isItemSelected = Boolean(selectedItemId);
               const quantity = Number(form.watch(`items.${index}.quantity`) || 0);
               const rate = Number(form.watch(`items.${index}.rate`) || 0);
 
@@ -1032,24 +1239,24 @@ export function SaleDialog({
                             value={asSelectValue(selectField.value)}
                             onValueChange={(value) => {
                               selectField.onChange(value);
-                              const selected = relatedItems.find((item) => asSelectValue(item.id) === value);
+                              const selected = selectableItems.find((item) => asSelectValue(item.id) === value);
                               form.setValue(`items.${index}.productNameUrdu`, selected?.productNameUrdu ?? "");
                               if (!form.getValues(`items.${index}.rate`)) {
                                 form.setValue(`items.${index}.rate`, selected?.baseRate ?? 0);
                               }
                             }}
+                            disabled={!hasSelectableItem}
                           >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="آئٹم منتخب کریں" />
+                              <SelectValue placeholder={hasSelectableItem ? "آئٹم منتخب کریں" : "قابل فروخت آئٹم موجود نہیں"} />
                             </SelectTrigger>
                             <SelectContent>
-                              {relatedItems
-                                .filter((item) => item.id)
-                                .map((item) => (
-                                  <SelectItem key={item.id} value={asSelectValue(item.id)}>
-                                    {item.productNameUrdu}
-                                  </SelectItem>
-                                ))}
+                              {selectableItems.map((item) => (
+                                <SelectItem key={item.id} value={asSelectValue(item.id)}>
+                                  {item.productNameUrdu} - {item.unit || "اکائی درج نہیں"}
+                                  {item.quantityReceived === undefined || item.quantityReceived === null ? " (موصول مقدار بعد میں درج ہوگی)" : ""}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         )}
@@ -1062,12 +1269,12 @@ export function SaleDialog({
                       ) : null}
                     </Field>
                     <Field>
-                      <FieldLabel>مقدار</FieldLabel>
-                      <Input {...form.register(`items.${index}.quantity`, { valueAsNumber: true })} type="number" min="0" />
+                      <FieldLabel>{selectedItem?.unit ? `مقدار (${selectedItem.unit})` : "مقدار"}</FieldLabel>
+                      <Input {...form.register(`items.${index}.quantity`, { valueAsNumber: true })} type="number" min="0" disabled={!isItemSelected} placeholder={isItemSelected ? "0" : "پہلے آئٹم منتخب کریں"} />
                     </Field>
                     <Field>
                       <FieldLabel>ریٹ</FieldLabel>
-                      <Input {...form.register(`items.${index}.rate`, { valueAsNumber: true })} type="number" min="0" />
+                      <Input {...form.register(`items.${index}.rate`, { valueAsNumber: true })} type="number" min="0" disabled={!isItemSelected} placeholder={isItemSelected ? "0" : "پہلے آئٹم منتخب کریں"} />
                     </Field>
                     <Field>
                       <FieldLabel>لائن کل</FieldLabel>
