@@ -280,6 +280,12 @@ export const usersApi = {
   remove(id: string) {
     return request(`/users/${id}`, { method: "DELETE" });
   },
+  generateQr(userId: string) {
+    return request<{ data: { token: string; expiresAt: string; userName: string } }>(
+      "/auth/qr/generate",
+      { method: "POST", body: JSON.stringify({ userId: Number(userId) }) },
+    ).then((res) => res.data);
+  },
 };
 
 export const customersApi = {

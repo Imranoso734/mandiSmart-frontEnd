@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import QRCode from "react-qr-code";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -302,11 +303,33 @@ function RecordActions({
 export function DashboardPageClient() {
   const session = useSession();
   const today = todayDate();
+  const [dashQrState, setDashQrState] = useState<QrState>(null);
+  const [dashQrLoading, setDashQrLoading] = useState<string | null>(null);
+
   const results = useQueries({
     queries: [
       { queryKey: ["reports", "dashboard", today], queryFn: () => reportsApi.dashboardOverview(today) },
     ],
   });
+
+  const operatorsQuery = useQuery({
+    queryKey: ["users", "operators"],
+    queryFn: () => usersApi.list({ limit: 50 }),
+    enabled: session?.role === "OWNER",
+    select: (data) => data.items.filter((u) => u.role === "OPERATOR" && u.isActive),
+  });
+
+  async function handleDashQr(user: User) {
+    setDashQrLoading(user.id);
+    try {
+      const data = await usersApi.generateQr(user.id);
+      setDashQrState(data);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "QR generate نہیں ہو سکا");
+    } finally {
+      setDashQrLoading(null);
+    }
+  }
 
   const [overviewQuery] = results;
 
@@ -463,6 +486,78 @@ export function DashboardPageClient() {
           ))}
         </div>
       </SectionCard>
+
+      {/* QR login section — OWNER only */}
+      {session?.role === "OWNER" ? (
+        <SectionCard
+          title="منشی موبائل QR Login"
+          description="کسی منشی کو موبائل ایپ پر لاگ ان کروانے کے لئے QR کوڈ بنائیں — 10 منٹ میں ختم، ایک بار استعمال"
+        >
+          {operatorsQuery.isLoading ? (
+            <LoadingState title="منشی لوڈ ہو رہے ہیں" />
+          ) : !operatorsQuery.data?.length ? (
+            <EmptyState
+              title="کوئی منشی نہیں ملا"
+              description="پہلے آپریٹرز صفحے سے نیا منشی شامل کریں"
+            />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {operatorsQuery.data.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--brand-line)] bg-[#fffdf8] px-5 py-4 dark:border-white/10 dark:bg-slate-900/60"
+                >
+                  {/* Avatar + name */}
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--brand-forest)] font-heading text-xl text-white">
+                      {user.name.charAt(0)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-heading text-[1.7rem] text-slate-900 dark:text-white">{user.name}</p>
+                      <p className="truncate text-[1rem] text-slate-500 dark:text-slate-400">{user.email}</p>
+                    </div>
+                  </div>
+                  {/* QR button */}
+                  <button
+                    onClick={() => void handleDashQr(user)}
+                    disabled={dashQrLoading === user.id}
+                    className="shrink-0 rounded-xl border border-[var(--brand-forest)] px-4 py-2 text-sm font-semibold text-[var(--brand-forest)] transition hover:bg-[var(--brand-forest)] hover:text-white disabled:opacity-50"
+                  >
+                    {dashQrLoading === user.id ? "..." : "QR بنائیں"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      ) : null}
+
+      {/* QR modal (dashboard) */}
+      {dashQrState ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setDashQrState(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-5 text-center">
+              <p className="font-heading text-2xl text-slate-800 dark:text-white">{dashQrState.userName}</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">موبائل ایپ سے یہ QR اسکین کریں</p>
+            </div>
+            <div className="flex justify-center rounded-xl bg-white p-4">
+              <QRCode value={dashQrState.token} size={220} />
+            </div>
+            <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-center dark:bg-amber-900/20">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                ⏱ یہ QR کوڈ 10 منٹ میں ختم ہو جائے گا
+              </p>
+              <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-500">ایک بار استعمال کے بعد کالعدم</p>
+            </div>
+            <button
+              onClick={() => setDashQrState(null)}
+              className="mt-5 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              بند کریں
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -907,6 +1002,8 @@ export function SupplierDetailPageClient({ id }: { id: string }) {
   );
 }
 
+type QrState = { token: string; expiresAt: string; userName: string } | null;
+
 export function UsersPageClient() {
   const session = useSession();
   const [search, setSearch] = useState("");
@@ -914,6 +1011,20 @@ export function UsersPageClient() {
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
+  const [qrState, setQrState] = useState<QrState>(null);
+  const [qrLoading, setQrLoading] = useState<string | null>(null); // userId being loaded
+
+  async function handleGenerateQr(user: User) {
+    setQrLoading(user.id);
+    try {
+      const data = await usersApi.generateQr(user.id);
+      setQrState(data);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "QR generate نہیں ہو سکا");
+    } finally {
+      setQrLoading(null);
+    }
+  }
 
   const query = useQuery({
     queryKey: ["users", deferredSearch],
@@ -978,6 +1089,18 @@ export function UsersPageClient() {
                 { key: "phone", title: "فون", render: (user) => formatPhone(user.phone) || "..." },
                 { key: "role", title: "رول", render: (user) => <StatusPill label={roleLabels[user.role]} tone={user.role === "OWNER" ? "default" : "warning"} /> },
                 { key: "status", title: "حالت", render: (user) => <StatusPill label={user.isActive ? "فعال" : "غیر فعال"} tone={user.isActive ? "success" : "warning"} /> },
+                {
+                  key: "qr", title: "موبائل QR",
+                  render: (user) => user.role === "OPERATOR" ? (
+                    <button
+                      onClick={() => void handleGenerateQr(user)}
+                      disabled={qrLoading === user.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white disabled:opacity-50"
+                    >
+                      {qrLoading === user.id ? "..." : "QR بنائیں"}
+                    </button>
+                  ) : null,
+                },
                 { key: "actions", title: "عمل", render: (user) => <RecordActions onEdit={() => { setEditing(user); setOpen(true); }} onDelete={() => setDeleting(user)} /> },
               ]}
               renderCard={(user) => (
@@ -990,7 +1113,18 @@ export function UsersPageClient() {
                       </div>
                       <StatusPill label={roleLabels[user.role]} tone={user.role === "OWNER" ? "default" : "warning"} />
                     </div>
-                    <RecordActions onEdit={() => { setEditing(user); setOpen(true); }} onDelete={() => setDeleting(user)} />
+                    <div className="flex gap-2">
+                      {user.role === "OPERATOR" && (
+                        <button
+                          onClick={() => void handleGenerateQr(user)}
+                          disabled={qrLoading === user.id}
+                          className="flex-1 rounded-md border border-[var(--brand-primary)] py-2 text-sm font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white disabled:opacity-50"
+                        >
+                          {qrLoading === user.id ? "..." : "موبائل QR بنائیں"}
+                        </button>
+                      )}
+                      <RecordActions onEdit={() => { setEditing(user); setOpen(true); }} onDelete={() => setDeleting(user)} />
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -1019,6 +1153,38 @@ export function UsersPageClient() {
         loading={deleteMutation.isPending}
         onConfirm={() => deleting && deleteMutation.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}
       />
+
+      {/* QR modal */}
+      {qrState ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setQrState(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-5 text-center">
+              <p className="font-heading text-2xl text-slate-800 dark:text-white">{qrState.userName}</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">موبائل ایپ سے یہ QR اسکین کریں</p>
+            </div>
+
+            <div className="flex justify-center rounded-xl bg-white p-4">
+              <QRCode value={qrState.token} size={220} />
+            </div>
+
+            <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-center dark:bg-amber-900/20">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                ⏱ یہ QR کوڈ 10 منٹ میں ختم ہو جائے گا
+              </p>
+              <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-500">
+                ایک بار استعمال کے بعد کالعدم ہو جائے گا
+              </p>
+            </div>
+
+            <button
+              onClick={() => setQrState(null)}
+              className="mt-5 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              بند کریں
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
